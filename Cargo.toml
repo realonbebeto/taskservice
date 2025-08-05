@@ -1,0 +1,25 @@
+[package]
+name = "taskservice"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web = "4.11.0"
+chrono = "0.4.41"
+derive_more = "2.0.1"
+env_logger = "0.11.8"
+log = "0.4.27"
+serde = { version = "1.0.219", features = ["derive"] }
+sqlx = { version = "0.8.6", default-features = false, features = [
+    "runtime-tokio-rustls",
+    "macros",
+    "postgres",
+    "uuid",
+    "chrono",
+    "migrate",
+] }
+strum = { version = "0.27.2", features = ["derive"] }
+strum_macros = "0.27.2"
+uuid = { version = "1.17.0", features = ["v4"] }
+utoipa = { version = "5.4.0", features = ["actix_extras"] }
+utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }

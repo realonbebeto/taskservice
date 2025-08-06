@@ -46,3 +46,33 @@ impl Task {
         self.state != *state
     }
 }
+
+#[derive(Serialize, Deserialize, FromRow, ToSchema)]
+pub struct TaskUpdate {
+    pub task_uuid: String,
+    pub profile_id: Option<String>,
+    pub task_type: Option<String>,
+    pub state: Option<TaskState>,
+    pub source_file: Option<String>,
+    pub result_file: Option<String>,
+}
+
+impl TaskUpdate {
+    pub fn new(
+        task_uuid: String,
+        profile_id: Option<String>,
+        task_type: Option<String>,
+        state: Option<TaskState>,
+        source_file: Option<String>,
+        result_file: Option<String>,
+    ) -> TaskUpdate {
+        TaskUpdate {
+            task_uuid,
+            profile_id,
+            task_type,
+            state,
+            source_file,
+            result_file,
+        }
+    }
+}

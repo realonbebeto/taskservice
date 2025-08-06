@@ -1,7 +1,7 @@
 -- Add migration script here
 CREATE TABLE task (
-    "profile_id" VARCHAR(64) NOT NULL,
-    "task_uuid" VARCHAR(64),
+    "profile_id" UUID NOT NULL,
+    "task_uuid" UUID,
     "task_type" VARCHAR(64),
     "state" VARCHAR(64),
     "source_file" TEXT,

@@ -4,8 +4,8 @@ mod repository;
 
 use actix_web::web;
 use actix_web::{App, HttpServer, middleware::Logger, web::Data};
+use api::profile::{create_profile, delete_profile, get_profile, update_profile};
 use api::task::{complete_task, fail_task, get_task, pause_task, start_task, submit_task};
-use api::user::{create_user, delete_user, get_user, update_user};
 use repository::pgdb::PGDBRepository;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
@@ -20,7 +20,7 @@ async fn main() -> std::io::Result<()> {
     env_logger::init();
 
     HttpServer::new(move || {
-        let pgdb_repo = PGDBRepository::init("task".to_string());
+        let pgdb_repo = PGDBRepository::init();
         let ddb_data = Data::new(pgdb_repo);
 
         let logger = Logger::default();
@@ -36,10 +36,10 @@ async fn main() -> std::io::Result<()> {
             .service(start_task)
             .service(submit_task)
             .service(fail_task)
-            .service(create_user)
-            .service(delete_user)
-            .service(get_user)
-            .service(update_user)
+            .service(create_profile)
+            .service(delete_profile)
+            .service(get_profile)
+            .service(update_profile)
     })
     .bind(("127.0.0.1", 80))?
     .run()

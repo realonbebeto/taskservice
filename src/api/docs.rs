@@ -13,10 +13,10 @@ use utoipa::OpenApi;
         crate::api::task::pause_task,
         crate::api::task::complete_task,
         crate::api::task::fail_task,
-        crate::api::user::get_user,
-        crate::api::user::create_user,
-        crate::api::user::update_user,
-        crate::api::user::delete_user
+        crate::api::profile::get_profile,
+        crate::api::profile::create_profile,
+        crate::api::profile::update_profile,
+        crate::api::profile::delete_profile
 
     )
 )]

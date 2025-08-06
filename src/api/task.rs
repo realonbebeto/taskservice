@@ -1,4 +1,4 @@
-use crate::model::task::TaskState;
+use crate::model::task::{TaskState, TaskUpdate};
 use crate::{model::task::Task, repository::pgdb::PGDBRepository};
 use actix_web::{
     HttpResponse,
@@ -6,9 +6,7 @@ use actix_web::{
     get,
     http::{StatusCode, header::ContentType},
     post, put,
-    web::Data,
-    web::Json,
-    web::Path,
+    web::{Data, Json, Path},
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
@@ -33,7 +31,7 @@ pub enum TaskError {
 }
 
 #[derive(Deserialize, ToSchema)]
-pub struct SubmitTaskRequest {
+pub struct TaskCreateRequest {
     profile_id: String,
     task_type: String,
     source_file: String,
@@ -61,7 +59,7 @@ async fn state_transition(
     new_state: TaskState,
     result_file: Option<String>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
-    let mut task = match ddb_repo.get_task(task_global_id).await {
+    let task = match ddb_repo.get_task(&task_global_id).await {
         Some(task) => task,
         None => return Err(TaskError::TaskNotFound),
     };
@@ -70,11 +68,19 @@ async fn state_transition(
         return Err(TaskError::BadTaskRequest);
     };
 
-    task.state = new_state;
-    task.result_file = result_file;
+    let tokens: Vec<String> = task_global_id.split("_").map(|x| String::from(x)).collect();
+
+    let task_update = TaskUpdate::new(
+        tokens[1].clone(),
+        None,
+        None,
+        Some(new_state),
+        None,
+        result_file,
+    );
 
     let task_identifier = task.get_global_id();
-    match ddb_repo.put_task(task).await {
+    match ddb_repo.update_task(task_update).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),
@@ -90,7 +96,7 @@ pub async fn get_task(
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<Task>, TaskError> {
     let tsk = ddb_repo
-        .get_task(task_identifier.into_inner().task_global_id)
+        .get_task(&task_identifier.into_inner().task_global_id)
         .await;
     match tsk {
         Some(tsk) => Ok(Json(tsk)),
@@ -101,13 +107,13 @@ pub async fn get_task(
 #[utoipa::path(
     post,
     path="/task",
-    request_body=SubmitTaskRequest,
+    request_body=TaskCreateRequest,
     responses((status=201, description="Task submitted successfuly"))
 )]
 #[post("/task")]
 pub async fn submit_task(
     ddb_repo: Data<PGDBRepository>,
-    request: Json<SubmitTaskRequest>,
+    request: Json<TaskCreateRequest>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     let task = Task::new(
         request.profile_id.clone(),
@@ -116,7 +122,7 @@ pub async fn submit_task(
     );
 
     let task_identifier = task.get_global_id();
-    match ddb_repo.put_task(task).await {
+    match ddb_repo.create_task(task).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),

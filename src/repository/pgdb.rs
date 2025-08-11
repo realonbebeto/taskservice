@@ -131,7 +131,7 @@ impl PGDBRepository {
     }
 
     pub async fn get_task(&self, task_id: &str) -> Option<Task> {
-        let tokens: Vec<String> = task_id.split("_").map(|x| String::from(x)).collect();
+        let tokens: Vec<String> = task_id.split("_").map(String::from).collect();
 
         let mut tx = self.pool.begin().await.unwrap();
         let result =

@@ -17,10 +17,10 @@ pub struct ProfileIdentifier {
 
 #[derive(Debug, Display)]
 pub enum ProfileError {
-    ProfileNotFound,
-    ProfileUpdateFailure,
-    ProfileCreationFailure,
-    ProfileDeletionFailure,
+    NotFound,
+    UpdateFailure,
+    CreationFailure,
+    DeletionFailure,
 }
 
 impl ResponseError for ProfileError {
@@ -31,10 +31,10 @@ impl ResponseError for ProfileError {
     }
     fn status_code(&self) -> StatusCode {
         match self {
-            ProfileError::ProfileNotFound => StatusCode::NOT_FOUND,
-            &ProfileError::ProfileUpdateFailure => StatusCode::FAILED_DEPENDENCY,
-            ProfileError::ProfileCreationFailure => StatusCode::BAD_REQUEST,
-            ProfileError::ProfileDeletionFailure => StatusCode::FAILED_DEPENDENCY,
+            ProfileError::NotFound => StatusCode::NOT_FOUND,
+            &ProfileError::UpdateFailure => StatusCode::FAILED_DEPENDENCY,
+            ProfileError::CreationFailure => StatusCode::BAD_REQUEST,
+            ProfileError::DeletionFailure => StatusCode::FAILED_DEPENDENCY,
         }
     }
 }
@@ -59,7 +59,7 @@ pub async fn get_profile(
 
     match prf {
         Some(prf) => Ok(Json(prf)),
-        None => Err(ProfileError::ProfileNotFound),
+        None => Err(ProfileError::NotFound),
     }
 }
 
@@ -78,7 +78,7 @@ pub async fn create_profile(
         Ok(_) => Ok(Json(profile)),
         Err(e) => {
             eprintln!("{e:?}");
-            Err(ProfileError::ProfileCreationFailure)
+            Err(ProfileError::CreationFailure)
         }
     }
 }
@@ -101,7 +101,7 @@ pub async fn update_profile(
         Ok(_) => Ok(Json(p_update)),
         Err(e) => {
             eprintln!("{e:?}");
-            Err(ProfileError::ProfileUpdateFailure)
+            Err(ProfileError::UpdateFailure)
         }
     }
 }
@@ -122,7 +122,7 @@ pub async fn delete_profile(
         Ok(_) => Ok(Json("Profile deletion successful".into())),
         Err(e) => {
             eprintln!("{e:?}");
-            Err(ProfileError::ProfileDeletionFailure)
+            Err(ProfileError::DeletionFailure)
         }
     }
 }

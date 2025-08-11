@@ -3,6 +3,14 @@ name = "taskservice"
 version = "0.1.0"
 edition = "2024"
 
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+path = "src/main.rs"
+name = "taskservice"
+
 [dependencies]
 actix-web = "4.11.0"
 chrono = "0.4.41"

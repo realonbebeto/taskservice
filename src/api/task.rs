@@ -68,7 +68,7 @@ async fn state_transition(
         return Err(TaskError::BadTaskRequest);
     };
 
-    let tokens: Vec<String> = task_global_id.split("_").map(|x| String::from(x)).collect();
+    let tokens: Vec<String> = task_global_id.split("_").map(String::from).collect();
 
     let task_update = TaskUpdate::new(
         tokens[1].clone(),

@@ -31,15 +31,10 @@ pub struct ProfileUpdate {
 
 impl ProfileUpdate {
     pub fn new(id: &str, first_name: Option<&str>, last_name: Option<&str>) -> ProfileUpdate {
-        let f_name = match first_name {
-            Some(v) => Some(v.to_string()),
-            None => None,
-        };
+        let f_name = first_name.map(|v| v.to_string());
 
-        let l_name = match last_name {
-            Some(v) => Some(v.to_string()),
-            None => None,
-        };
+        let l_name = last_name.map(|v| v.to_string());
+
         ProfileUpdate {
             id: id.to_string(),
             first_name: f_name,

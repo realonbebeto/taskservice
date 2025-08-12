@@ -6,17 +6,19 @@ use uuid::Uuid;
 #[allow(unused)]
 #[derive(Serialize, Deserialize, FromRow, Debug, ToSchema)]
 pub struct Profile {
-    pub id: String,
+    pub id: Uuid,
     pub first_name: String,
     pub last_name: String,
+    pub email: String,
 }
 
 impl Profile {
-    pub fn new(first_name: &str, last_name: &str) -> Profile {
+    pub fn new(first_name: &str, last_name: &str, email: &str) -> Profile {
         Profile {
-            id: Uuid::new_v4().to_string(),
+            id: Uuid::new_v4(),
             first_name: first_name.to_string(),
             last_name: last_name.to_string(),
+            email: email.to_string(),
         }
     }
 }

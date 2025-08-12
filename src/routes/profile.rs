@@ -1,5 +1,5 @@
 use crate::model::profile::{Profile, ProfileUpdate};
-use crate::repository::pgdb::PGDBRepository;
+use crate::repository::pgdb;
 use actix_web::{
     HttpResponse, ResponseError, delete, get,
     http::{StatusCode, header::ContentType},
@@ -8,11 +8,13 @@ use actix_web::{
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct ProfileIdentifier {
-    id: String,
+    id: Uuid,
 }
 
 #[derive(Debug, Display)]
@@ -43,6 +45,7 @@ impl ResponseError for ProfileError {
 pub struct ProfileCreateRequest {
     first_name: String,
     last_name: String,
+    email: String,
 }
 
 #[utoipa::path(get, path = "/profile/{id}",
@@ -50,12 +53,10 @@ params(("id" = String, Path, description="Profile Id")),
 responses((status=200, body=Profile, description="Profile found"), (status=404, description="No Profile Found"),))]
 #[get("/profile/{id}")]
 pub async fn get_profile(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
 ) -> Result<Json<Profile>, ProfileError> {
-    let prf = ddb_repo
-        .get_profile(&profile_identifier.into_inner().id)
-        .await;
+    let prf = pgdb::get_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
 
     match prf {
         Some(prf) => Ok(Json(prf)),
@@ -67,15 +68,15 @@ pub async fn get_profile(
 responses((status=200, body=Profile, description="User creation successful"), (status=404, description="User creation unsuccessful"),))]
 #[post("/profile")]
 pub async fn create_profile(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     request: Json<ProfileCreateRequest>,
-) -> Result<Json<Profile>, ProfileError> {
-    let profile = Profile::new(&request.first_name, &request.last_name);
+) -> Result<HttpResponse, ProfileError> {
+    let profile = Profile::new(&request.first_name, &request.last_name, &request.email);
 
-    let result = ddb_repo.create_profile(&profile).await;
+    let result = pgdb::create_profile(pool.get_ref(), &profile).await;
 
     match result {
-        Ok(_) => Ok(Json(profile)),
+        Ok(_) => Ok(HttpResponse::Ok().finish()),
         Err(e) => {
             eprintln!("{e:?}");
             Err(ProfileError::CreationFailure)
@@ -87,7 +88,7 @@ pub async fn create_profile(
 responses((status=200, body=Profile, description="User creation successful"), (status=404, description="User creation unsuccessful"),))]
 #[put("/profile/update")]
 pub async fn update_profile(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     request: Json<ProfileUpdate>,
 ) -> Result<Json<ProfileUpdate>, ProfileError> {
     let p_update = ProfileUpdate::new(
@@ -95,7 +96,7 @@ pub async fn update_profile(
         request.first_name.as_deref(),
         request.last_name.as_deref(),
     );
-    let result = ddb_repo.update_profile(&p_update).await;
+    let result = pgdb::update_profile(pool.get_ref(), &p_update).await;
 
     match result {
         Ok(_) => Ok(Json(p_update)),
@@ -111,12 +112,10 @@ params(("id" = String, Path, description="Profile Id")),
 responses((status=200, description="User deletion successful"), (status=404, description="User deletion unsuccessful"),))]
 #[delete("/profile/{id}")]
 pub async fn delete_profile(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
 ) -> Result<Json<String>, ProfileError> {
-    let result = ddb_repo
-        .delete_profile(&profile_identifier.into_inner().id)
-        .await;
+    let result = pgdb::delete_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
 
     match result {
         Ok(_) => Ok(Json("Profile deletion successful".into())),

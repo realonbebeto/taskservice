@@ -1,5 +1,6 @@
+use crate::model::task::Task;
 use crate::model::task::{TaskState, TaskUpdate};
-use crate::{model::task::Task, repository::pgdb::PGDBRepository};
+use crate::repository::pgdb;
 use actix_web::{
     HttpResponse,
     error::ResponseError,
@@ -10,6 +11,7 @@ use actix_web::{
 };
 use derive_more::Display;
 use serde::{Deserialize, Serialize};
+use sqlx::PgPool;
 use utoipa::ToSchema;
 
 #[derive(Deserialize, Serialize, ToSchema)]
@@ -54,12 +56,12 @@ impl ResponseError for TaskError {
 }
 
 async fn state_transition(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_global_id: String,
     new_state: TaskState,
     result_file: Option<String>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
-    let task = match ddb_repo.get_task(&task_global_id).await {
+    let task = match pgdb::get_task(pool.get_ref(), &task_global_id).await {
         Some(task) => task,
         None => return Err(TaskError::TaskNotFound),
     };
@@ -80,7 +82,7 @@ async fn state_transition(
     );
 
     let task_identifier = task.get_global_id();
-    match ddb_repo.update_task(task_update).await {
+    match pgdb::update_task(pool.get_ref(), task_update).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),
@@ -92,12 +94,10 @@ params(("task_gloabal_id"= String, Path, description="Global Id")),
 responses((status=200, body=Task, description="Task by ID"), (status=404, description="Task not found"),))]
 #[get("/task/{task_global_id}")]
 pub async fn get_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<Task>, TaskError> {
-    let tsk = ddb_repo
-        .get_task(&task_identifier.into_inner().task_global_id)
-        .await;
+    let tsk = pgdb::get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id).await;
     match tsk {
         Some(tsk) => Ok(Json(tsk)),
         None => Err(TaskError::TaskNotFound),
@@ -112,7 +112,7 @@ pub async fn get_task(
 )]
 #[post("/task")]
 pub async fn submit_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     request: Json<TaskCreateRequest>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     let task = Task::new(
@@ -122,7 +122,7 @@ pub async fn submit_task(
     );
 
     let task_identifier = task.get_global_id();
-    match ddb_repo.create_task(task).await {
+    match pgdb::create_task(pool.get_ref(), task).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),
@@ -137,11 +137,11 @@ responses((status=200, description="Task start successful"),
             (status=424, description="Task start unsuccessful")))]
 #[put("/task/{task_global_id}/start")]
 pub async fn start_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     state_transition(
-        ddb_repo,
+        pool,
         task_identifier.into_inner().task_global_id,
         TaskState::InProgress,
         None,
@@ -155,11 +155,11 @@ request_body= TaskIdentifier,
 responses((status=200, description="Task pause successful"), (status=424, description="Task pause unsuccessful")))]
 #[put("/task/{task_global_id}/pause")]
 pub async fn pause_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     state_transition(
-        ddb_repo,
+        pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Paused,
         None,
@@ -172,12 +172,12 @@ request_body=TaskCompletionRequest,
 responses((status=200, description="Task completion successful"), (status=424, description="Task completion unsuccessful")))]
 #[put("/task/{task_global_id}/complete")]
 pub async fn complete_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
     complete_request: Json<TaskCompletionRequest>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     state_transition(
-        ddb_repo,
+        pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Completed,
         Some(complete_request.result_file.clone()),
@@ -190,11 +190,11 @@ params(("task_global_id"=String, Path, description="Global Id")),
 responses((status=200, description="Task fail successful"), (status=424, description="Task fail unsuccessful")))]
 #[put("/task/{task_global_id}/fail")]
 pub async fn fail_task(
-    ddb_repo: Data<PGDBRepository>,
+    pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
     state_transition(
-        ddb_repo,
+        pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Failed,
         None,

@@ -28,6 +28,11 @@ sqlx = { version = "0.8.6", default-features = false, features = [
 ] }
 strum = { version = "0.27.2", features = ["derive"] }
 strum_macros = "0.27.2"
-uuid = { version = "1.17.0", features = ["v4"] }
-utoipa = { version = "5.4.0", features = ["actix_extras"] }
+uuid = { version = "1.18.0", features = ["v4", "serde"] }
+utoipa = { version = "5.4.0", features = ["actix_extras", "uuid"] }
 utoipa-swagger-ui = { version = "9.0.2", features = ["actix-web"] }
+tokio = { version = "1.47.1", features = ["macros", "rt-multi-thread"] }
+config = "0.15.14"
+
+[dev-dependencies]
+reqwest = { version = "0.12.23", features = ["json"] }

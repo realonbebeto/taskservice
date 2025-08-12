@@ -2,3 +2,5 @@
 .env
 .vscode
 .sqlx
+
+configuration.yaml

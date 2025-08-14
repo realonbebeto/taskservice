@@ -14,7 +14,7 @@ impl From<sqlx::Error> for PGDBError {
     }
 }
 
-pub async fn create_task(pool: &PgPool, task: Task) -> Result<String, PGDBError> {
+pub async fn db_create_task(pool: &PgPool, task: Task) -> Result<String, PGDBError> {
     let mut tx = pool.begin().await.unwrap();
     let result = sqlx::query("INSERT INTO task(profile_id, task_uuid, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6) RETURNING task_uuid")
         .bind(task.profile_id)
@@ -38,7 +38,7 @@ pub async fn create_task(pool: &PgPool, task: Task) -> Result<String, PGDBError>
     }
 }
 
-pub async fn update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), PGDBError> {
+pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), PGDBError> {
     let mut tx = pool.begin().await.unwrap();
     let mut builder = QueryBuilder::new("UPDATE task SET ");
     let mut separated = builder.separated(", ");
@@ -81,7 +81,7 @@ pub async fn update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), P
     }
 }
 
-pub async fn get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
+pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
     let tokens: Vec<String> = task_id.split("_").map(String::from).collect();
 
     let mut tx = pool.begin().await.unwrap();
@@ -99,8 +99,9 @@ pub async fn get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
     }
 }
 
-pub async fn create_profile(pool: &PgPool, profile: &Profile) -> Result<HttpResponse, PGDBError> {
-    let exists_profile = get_profile(pool, &profile.id).await;
+#[tracing::instrument("Saving new profile details in the database", skip(pool, profile))]
+pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), PGDBError> {
+    let exists_profile = db_get_profile(pool, &profile.id).await;
 
     match exists_profile {
         Some(_) => Err(PGDBError(sqlx::Error::InvalidArgument(
@@ -111,7 +112,7 @@ pub async fn create_profile(pool: &PgPool, profile: &Profile) -> Result<HttpResp
             let result = sqlx::query(
                 "INSERT INTO profile(id, first_name, last_name, email) VALUES($1, $2, $3, $4) RETURNING id",
             )
-            .bind(profile.id.clone())
+            .bind(profile.id)
             .bind(profile.first_name.clone())
             .bind(profile.last_name.clone())
             .bind(profile.email.clone())
@@ -119,11 +120,14 @@ pub async fn create_profile(pool: &PgPool, profile: &Profile) -> Result<HttpResp
             .await;
 
             match result {
-                Ok(_) => {
+                Ok(row) => {
+                    let id = row.get::<String, _>("id");
+                    tracing::info!("Failed to execute query: {:?}", id);
                     tx.commit().await?;
-                    Ok(HttpResponse::Ok().finish())
+                    Ok(())
                 }
                 Err(e) => {
+                    tracing::error!("Failed to execute query: {:?}", e);
                     tx.rollback().await?;
                     Err(PGDBError(e))
                 }
@@ -132,7 +136,7 @@ pub async fn create_profile(pool: &PgPool, profile: &Profile) -> Result<HttpResp
     }
 }
 
-pub async fn get_profile(pool: &PgPool, id: &Uuid) -> Option<Profile> {
+pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<Profile> {
     // let mut tx = pool.begin().await.unwrap();
     let result = sqlx::query_as::<_, Profile>(
         "SELECT id, first_name, last_name, email FROM profile WHERE id=$1",
@@ -152,7 +156,7 @@ pub async fn get_profile(pool: &PgPool, id: &Uuid) -> Option<Profile> {
 }
 
 pub async fn delete_profile(pool: &PgPool, id: &Uuid) -> Result<HttpResponse, PGDBError> {
-    let profile = get_profile(pool, id).await;
+    let profile = db_get_profile(pool, id).await;
 
     match profile {
         Some(_) => {
@@ -177,7 +181,7 @@ pub async fn delete_profile(pool: &PgPool, id: &Uuid) -> Result<HttpResponse, PG
     }
 }
 
-pub async fn update_profile(
+pub async fn db_update_profile(
     pool: &PgPool,
     profile_update: &ProfileUpdate,
 ) -> Result<(), PGDBError> {

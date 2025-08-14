@@ -40,7 +40,7 @@ then
     -e POSTGRES_DB=${DB_NAME} \
     -p "${DB_PORT}":5432 \
     --name "${DB_NAME}" \
-    -d postgres \
+    -d postgres:17.5 \
     postgres -N 1000
 fi
 

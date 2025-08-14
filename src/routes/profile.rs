@@ -56,7 +56,7 @@ pub async fn get_profile(
     pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
 ) -> Result<Json<Profile>, ProfileError> {
-    let prf = pgdb::get_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
+    let prf = pgdb::db_get_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
 
     match prf {
         Some(prf) => Ok(Json(prf)),
@@ -64,6 +64,10 @@ pub async fn get_profile(
     }
 }
 
+#[tracing::instrument(name = "Registering a new profile", 
+skip(pool, request),
+fields(profile_fname=%request.first_name, profile_email=%request.email)
+)]
 #[utoipa::path(post, path = "/profile",
 responses((status=200, body=Profile, description="User creation successful"), (status=404, description="User creation unsuccessful"),))]
 #[post("/profile")]
@@ -73,12 +77,16 @@ pub async fn create_profile(
 ) -> Result<HttpResponse, ProfileError> {
     let profile = Profile::new(&request.first_name, &request.last_name, &request.email);
 
-    let result = pgdb::create_profile(pool.get_ref(), &profile).await;
+    tracing::info!("Creating new profile in the database",);
+    let result = pgdb::db_create_profile(pool.get_ref(), &profile).await;
 
     match result {
-        Ok(_) => Ok(HttpResponse::Ok().finish()),
+        Ok(_) => {
+            tracing::info!("New profile has been saved");
+            Ok(HttpResponse::Ok().finish())
+        }
         Err(e) => {
-            eprintln!("{e:?}");
+            tracing::error!("Failed to save new profile {e:?}",);
             Err(ProfileError::CreationFailure)
         }
     }
@@ -96,7 +104,7 @@ pub async fn update_profile(
         request.first_name.as_deref(),
         request.last_name.as_deref(),
     );
-    let result = pgdb::update_profile(pool.get_ref(), &p_update).await;
+    let result = pgdb::db_update_profile(pool.get_ref(), &p_update).await;
 
     match result {
         Ok(_) => Ok(Json(p_update)),

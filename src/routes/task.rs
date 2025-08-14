@@ -61,7 +61,7 @@ async fn state_transition(
     new_state: TaskState,
     result_file: Option<String>,
 ) -> Result<Json<TaskIdentifier>, TaskError> {
-    let task = match pgdb::get_task(pool.get_ref(), &task_global_id).await {
+    let task = match pgdb::db_get_task(pool.get_ref(), &task_global_id).await {
         Some(task) => task,
         None => return Err(TaskError::TaskNotFound),
     };
@@ -82,7 +82,7 @@ async fn state_transition(
     );
 
     let task_identifier = task.get_global_id();
-    match pgdb::update_task(pool.get_ref(), task_update).await {
+    match pgdb::db_update_task(pool.get_ref(), task_update).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),
@@ -97,7 +97,7 @@ pub async fn get_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<Json<Task>, TaskError> {
-    let tsk = pgdb::get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id).await;
+    let tsk = pgdb::db_get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id).await;
     match tsk {
         Some(tsk) => Ok(Json(tsk)),
         None => Err(TaskError::TaskNotFound),
@@ -122,7 +122,7 @@ pub async fn submit_task(
     );
 
     let task_identifier = task.get_global_id();
-    match pgdb::create_task(pool.get_ref(), task).await {
+    match pgdb::db_create_task(pool.get_ref(), task).await {
         Ok(_) => Ok(Json(TaskIdentifier {
             task_global_id: task_identifier,
         })),

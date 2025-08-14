@@ -6,27 +6,24 @@ use crate::routes::task::{
 };
 use actix_web::dev::Server;
 use actix_web::web;
-use actix_web::{App, HttpServer, middleware::Logger, web::Data};
+use actix_web::{App, HttpServer, web::Data};
 use sqlx::PgPool;
 use std::net::TcpListener;
+use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
 pub fn run(listener: TcpListener, pg_pool: PgPool) -> std::io::Result<Server> {
     unsafe {
-        std::env::set_var("RUST_LOG", "debug");
+        // std::env::set_var("RUST_LOG", "trace");
         std::env::set_var("RUST_BACKTRACE", "1");
     }
     let pg_pool = Data::new(pg_pool);
 
-    if let Err(e) = env_logger::try_init() {
-        eprintln!("Logger already initialized: {}", e);
-    };
-
     let server = HttpServer::new(move || {
         // let pgdb_repo = PGDBRepository::init();
 
-        let logger = Logger::default();
+        let logger = TracingLogger::default();
         let openapi = routes::docs::ApiDoc::openapi();
         App::new()
             .wrap(logger)

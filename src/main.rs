@@ -1,5 +1,4 @@
-use secrecy::ExposeSecret;
-use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use std::net::TcpListener;
 use taskservice::configuration::get_configuration;
 use taskservice::startup::run;
@@ -11,11 +10,13 @@ async fn main() -> std::io::Result<()> {
     init_tracing_subscriber(subscriber);
     // Panic if we can't read configuration
     let configuration = get_configuration().expect("Failed to read configuration");
-    let pool = PgPool::connect(configuration.database.connection_string().expose_secret())
-        .await
-        .expect("Failed to connect to Postgres.");
+    let pool = PgPoolOptions::new().connect_lazy_with(configuration.database.with_db());
+
     // Port is coming from the settings
-    let address = format!("127.0.0.1:{}", configuration.application_port);
+    let address = format!(
+        "{}:{}",
+        configuration.application.host, configuration.application.port
+    );
     let listener = TcpListener::bind(address)?;
     run(listener, pool)?.await
 }

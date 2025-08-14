@@ -19,7 +19,7 @@ if ! [ -x "$(command -v sqlx)" ]; then
 fi
 
 # Check if a custom user has been set, otherwise default to 'postgres'
-DB_USER="${POSTGRES_USER:=main}"
+DB_USER="${POSTGRES_USER:=postgres}"
 # Check if a custom password has been set, otherwise default to 'password'
 DB_PASSWORD="${POSTGRES_PASSWORD:=main123}"
 # Check if a custom database name has been set, otherwise default to 'newsletter'

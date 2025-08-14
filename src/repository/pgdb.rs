@@ -121,8 +121,8 @@ pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), P
 
             match result {
                 Ok(row) => {
-                    let id = row.get::<String, _>("id");
-                    tracing::info!("Failed to execute query: {:?}", id);
+                    let id = row.get::<Uuid, _>("id");
+                    tracing::info!("Query execution successful: {:?}", id);
                     tx.commit().await?;
                     Ok(())
                 }

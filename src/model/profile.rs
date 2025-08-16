@@ -1,25 +1,31 @@
+use crate::domain::{profile_email::ProfileEmail, profile_name::ProfileName};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
-#[allow(unused)]
 #[derive(Serialize, Deserialize, FromRow, Debug, ToSchema)]
 pub struct Profile {
     pub id: Uuid,
-    pub first_name: String,
-    pub last_name: String,
-    pub email: String,
+    pub first_name: ProfileName,
+    pub last_name: ProfileName,
+    pub email: ProfileEmail,
 }
 
-impl Profile {
-    pub fn new(first_name: &str, last_name: &str, email: &str) -> Profile {
-        Profile {
+impl TryFrom<ProfileCreateRequest> for Profile {
+    type Error = String;
+
+    fn try_from(value: ProfileCreateRequest) -> Result<Self, Self::Error> {
+        let first_name = ProfileName::parse(value.first_name)?;
+        let last_name = ProfileName::parse(value.last_name)?;
+        let email = ProfileEmail::parse(value.email)?;
+
+        Ok(Profile {
             id: Uuid::new_v4(),
-            first_name: first_name.to_string(),
-            last_name: last_name.to_string(),
-            email: email.to_string(),
-        }
+            first_name,
+            last_name,
+            email,
+        })
     }
 }
 
@@ -43,4 +49,24 @@ impl ProfileUpdate {
             last_name: l_name,
         }
     }
+}
+
+#[derive(Serialize, Deserialize, FromRow, Debug, ToSchema)]
+pub struct ProfileResponse {
+    pub id: Uuid,
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
+}
+
+#[derive(Deserialize, Serialize, ToSchema)]
+pub struct ProfileIdentifier {
+    pub id: Uuid,
+}
+
+#[derive(Deserialize, ToSchema)]
+pub struct ProfileCreateRequest {
+    pub first_name: String,
+    pub last_name: String,
+    pub email: String,
 }

@@ -38,6 +38,65 @@ mod tests {
     }
 
     #[actix_web::test]
+    async fn subscribe_returns_400_when_fields_are_present_but_invalid() {
+        //Arrange
+        let app = spawn_app().await;
+        let client = reqwest::Client::new();
+
+        let test_cases = vec![
+            (
+                "first_name= ",
+                "last_name=Nitro",
+                "email=123@gmail.com",
+                "missing first name",
+            ),
+            (
+                "first_name=Bebeto",
+                "last_name= ",
+                "email=1234@gmail.com",
+                "missing last name",
+            ),
+            (
+                "first_name=Bebeto",
+                "last_name=Hello",
+                "email=definitely-not-an-email",
+                "invalid email",
+            ),
+            (
+                "first_name= ",
+                "last_name= ",
+                "email= ",
+                "missing both names and email",
+            ),
+        ];
+
+        for (fname, lname, email, val_msg) in test_cases {
+            // Act
+            let mut invalid_body = HashMap::new();
+            let fname = fname.split("=").collect::<Vec<&str>>();
+            let lname = lname.split("=").collect::<Vec<&str>>();
+            let email = email.split("=").collect::<Vec<&str>>();
+            invalid_body.insert(fname[0], fname[1]);
+            invalid_body.insert(lname[0], lname[1]);
+            invalid_body.insert(email[0], email[1]);
+
+            let response = client
+                .post(&format!("{}/profile", &app.address))
+                .json(&invalid_body)
+                .send()
+                .await
+                .expect("Failed to execute request");
+
+            // Assert
+            assert_eq!(
+                400,
+                response.status().as_u16(), // Addittional customised error message on test failure
+                "The API did not return a 200 OK when the payload was {}.",
+                val_msg
+            )
+        }
+    }
+    #[actix_web::test]
     async fn create_profile_returns_400_for_missing_data() {
         //Arrange
         let app = spawn_app().await;

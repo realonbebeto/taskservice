@@ -1,4 +1,4 @@
-use crate::model::profile::{Profile, ProfileUpdate};
+use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
 use actix_web::HttpResponse;
 use sqlx::{PgPool, QueryBuilder, Row};
@@ -113,9 +113,9 @@ pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), P
                 "INSERT INTO profile(id, first_name, last_name, email) VALUES($1, $2, $3, $4) RETURNING id",
             )
             .bind(profile.id)
-            .bind(profile.first_name.clone())
-            .bind(profile.last_name.clone())
-            .bind(profile.email.clone())
+            .bind(profile.first_name.as_ref())
+            .bind(profile.last_name.as_ref())
+            .bind(profile.email.as_ref())
             .fetch_one(&mut *tx)
             .await;
 
@@ -136,9 +136,8 @@ pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), P
     }
 }
 
-pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<Profile> {
-    // let mut tx = pool.begin().await.unwrap();
-    let result = sqlx::query_as::<_, Profile>(
+pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<ProfileResponse> {
+    let result = sqlx::query_as::<_, ProfileResponse>(
         "SELECT id, first_name, last_name, email FROM profile WHERE id=$1",
     )
     .bind(id)

@@ -1,4 +1,6 @@
-use crate::model::profile::{Profile, ProfileUpdate};
+use crate::model::profile::{
+    Profile, ProfileCreateRequest, ProfileIdentifier, ProfileResponse, ProfileUpdate,
+};
 use crate::repository::pgdb;
 use actix_web::{
     HttpResponse, ResponseError, delete, get,
@@ -7,15 +9,7 @@ use actix_web::{
     web::{Data, Json, Path},
 };
 use derive_more::Display;
-use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
-use utoipa::ToSchema;
-use uuid::Uuid;
-
-#[derive(Deserialize, Serialize, ToSchema)]
-pub struct ProfileIdentifier {
-    id: Uuid,
-}
 
 #[derive(Debug, Display)]
 pub enum ProfileError {
@@ -41,21 +35,14 @@ impl ResponseError for ProfileError {
     }
 }
 
-#[derive(Deserialize, ToSchema)]
-pub struct ProfileCreateRequest {
-    first_name: String,
-    last_name: String,
-    email: String,
-}
-
 #[utoipa::path(get, path = "/profile/{id}",
 params(("id" = String, Path, description="Profile Id")),
-responses((status=200, body=Profile, description="Profile found"), (status=404, description="No Profile Found"),))]
+responses((status=200, body=ProfileResponse, description="Profile found"), (status=404, description="No Profile Found"),))]
 #[get("/profile/{id}")]
 pub async fn get_profile(
     pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
-) -> Result<Json<Profile>, ProfileError> {
+) -> Result<Json<ProfileResponse>, ProfileError> {
     let prf = pgdb::db_get_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
 
     match prf {
@@ -74,8 +61,11 @@ responses((status=200, body=Profile, description="User creation successful"), (s
 pub async fn create_profile(
     pool: Data<PgPool>,
     request: Json<ProfileCreateRequest>,
-) -> Result<HttpResponse, ProfileError> {
-    let profile = Profile::new(&request.first_name, &request.last_name, &request.email);
+) -> HttpResponse {
+    let profile = match request.into_inner().try_into() {
+        Ok(profile) => profile,
+        Err(msg) => return HttpResponse::BadRequest().body(msg),
+    };
 
     tracing::info!("Creating new profile in the database",);
     let result = pgdb::db_create_profile(pool.get_ref(), &profile).await;
@@ -83,11 +73,11 @@ pub async fn create_profile(
     match result {
         Ok(_) => {
             tracing::info!("New profile has been saved");
-            Ok(HttpResponse::Ok().finish())
+            HttpResponse::Ok().finish()
         }
         Err(e) => {
             tracing::error!("Failed to save new profile {e:?}",);
-            Err(ProfileError::CreationFailure)
+            HttpResponse::InternalServerError().finish()
         }
     }
 }

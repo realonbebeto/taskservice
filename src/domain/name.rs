@@ -31,7 +31,7 @@ impl AsRef<str> for ProfileName {
 
 #[cfg(test)]
 mod tests {
-    use crate::domain::profile_name::ProfileName;
+    use crate::domain::name::ProfileName;
     use claims::{assert_err, assert_ok};
 
     #[test]

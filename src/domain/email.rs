@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use validator::ValidateEmail;
 
-#[derive(Deserialize, Serialize, Debug, ToSchema)]
+#[derive(Deserialize, Serialize, Debug, ToSchema, Clone)]
 
 pub struct ProfileEmail(String);
 
@@ -63,7 +63,6 @@ mod tests {
 
     #[quickcheck_macros::quickcheck]
     fn valid_emails_are_parsed_successfully(valid_email: ValidateEmailFixture) -> bool {
-        dbg!(&valid_email.0);
         ProfileEmail::parse(valid_email.0).is_ok()
     }
 }

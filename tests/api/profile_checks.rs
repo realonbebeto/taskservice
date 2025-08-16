@@ -1,4 +1,4 @@
-mod common;
+use crate::common;
 
 mod tests {
 
@@ -10,7 +10,6 @@ mod tests {
     async fn create_profile_returns_200_for_valid_data() {
         //Arrange
         let app = spawn_app().await;
-        let client = reqwest::Client::new();
 
         // Act
         let mut body = HashMap::new();
@@ -18,12 +17,7 @@ mod tests {
         body.insert("last_name", "Nitro");
         body.insert("email", "n@gmail.com");
 
-        let response = client
-            .post(&format!("{}/profile", &app.address))
-            .json(&body)
-            .send()
-            .await
-            .expect("Failed to execute request");
+        let response = app.post_profiles(&body).await;
 
         //Assert
         assert_eq!(200, response.status().as_u16());
@@ -41,7 +35,6 @@ mod tests {
     async fn subscribe_returns_400_when_fields_are_present_but_invalid() {
         //Arrange
         let app = spawn_app().await;
-        let client = reqwest::Client::new();
 
         let test_cases = vec![
             (
@@ -80,12 +73,7 @@ mod tests {
             invalid_body.insert(lname[0], lname[1]);
             invalid_body.insert(email[0], email[1]);
 
-            let response = client
-                .post(&format!("{}/profile", &app.address))
-                .json(&invalid_body)
-                .send()
-                .await
-                .expect("Failed to execute request");
+            let response = app.post_profiles(&invalid_body).await;
 
             // Assert
             assert_eq!(
@@ -100,7 +88,6 @@ mod tests {
     async fn create_profile_returns_400_for_missing_data() {
         //Arrange
         let app = spawn_app().await;
-        let client = reqwest::Client::new();
         let test_cases = vec![
             ("last_name", ("Nitro", "missing first name")),
             ("first_name", ("Bebeto", "missing last name")),
@@ -112,12 +99,7 @@ mod tests {
             let mut invalid_body = HashMap::new();
             invalid_body.insert(key, val_message.0);
 
-            let response = client
-                .post(&format!("{}/profile", &app.address))
-                .json(&invalid_body)
-                .send()
-                .await
-                .expect("Failed to execute request");
+            let response = app.post_profiles(&invalid_body).await;
 
             // Assert
             assert_eq!(

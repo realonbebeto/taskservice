@@ -1,7 +1,7 @@
 //! tests/health_check.rs
 // `actix_web::test` is the testing equivalent of `tokio::main`
 
-mod common;
+use crate::common;
 
 #[cfg(test)]
 mod tests {

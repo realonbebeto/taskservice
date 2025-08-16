@@ -1,4 +1,4 @@
-use crate::domain::{profile_email::ProfileEmail, profile_name::ProfileName};
+use crate::domain::{email::ProfileEmail, name::ProfileName};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;

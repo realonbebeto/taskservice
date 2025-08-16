@@ -5,6 +5,8 @@ use sqlx::ConnectOptions;
 use sqlx::postgres::PgConnectOptions;
 use sqlx::postgres::PgSslMode;
 
+use crate::domain::email::ProfileEmail;
+
 #[derive(Deserialize, Envconfig)]
 pub struct DatabaseSettings {
     #[envconfig(from = "DB_USERNAME")]
@@ -53,11 +55,37 @@ pub struct ApplicationSettings {
 }
 
 #[derive(Deserialize, Envconfig)]
+pub struct EmailClientSettings {
+    #[envconfig(from = "EMAIL_BASE_URI")]
+    pub base_uri: String,
+    #[envconfig(from = "SENDER_EMAIL")]
+    pub sender_email: String,
+    #[envconfig(from = "PUBLIC_EMAIL_KEY")]
+    pub public_email_key: String,
+    #[envconfig(from = "PRIVATE_EMAIL_KEY")]
+    pub private_email_key: String,
+    #[envconfig(from = "TIMEOUT_MS")]
+    pub timeout_milliseconds: u64,
+}
+
+impl EmailClientSettings {
+    pub fn sender(&self) -> Result<ProfileEmail, String> {
+        ProfileEmail::parse(self.sender_email.clone())
+    }
+
+    pub fn timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(self.timeout_milliseconds)
+    }
+}
+
+#[derive(Deserialize, Envconfig)]
 pub struct Settings {
     #[envconfig(nested)]
     pub database: DatabaseSettings,
     #[envconfig(nested)]
     pub application: ApplicationSettings,
+    #[envconfig(nested)]
+    pub email_client: EmailClientSettings,
 }
 
 pub fn get_configuration() -> Result<Settings, envconfig::Error> {

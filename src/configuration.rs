@@ -52,6 +52,8 @@ pub struct ApplicationSettings {
     pub host: String,
     #[envconfig(from = "APP_ENVIRONMENT", default = "local")]
     pub app_environment: Environment,
+    #[envconfig(from = "APP_URI")]
+    pub app_uri: String,
 }
 
 #[derive(Deserialize, Envconfig)]

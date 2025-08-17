@@ -23,7 +23,7 @@ struct SendEmailRequest<'a> {
     recipients: Vec<Recipient<'a>>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct EmailClient {
     http_client: Client,
     base_url: Url,
@@ -40,7 +40,6 @@ impl EmailClient {
         public_email_key: &str,
         timeout: std::time::Duration,
     ) -> Self {
-        dbg!(base_url);
         let base_url = Url::parse(base_url).expect("Invalid email base uri");
         let http_client = Client::builder().timeout(timeout).build().unwrap();
         Self {

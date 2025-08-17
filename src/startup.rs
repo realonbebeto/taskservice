@@ -3,6 +3,7 @@ use crate::email_client::EmailClient;
 use crate::routes;
 use crate::routes::health_check::health_check;
 use crate::routes::profile::{create_profile, delete_profile, get_profile, update_profile};
+use crate::routes::profile_confirm::confirm_profile;
 use crate::routes::task::{
     complete_task, fail_task, get_task, pause_task, start_task, submit_task,
 };
@@ -16,10 +17,14 @@ use tracing_actix_web::TracingLogger;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+#[derive(Debug)]
+pub struct ApplicationBaseUri(pub String);
+
 pub fn run(
     listener: TcpListener,
     pg_pool: PgPool,
     email_client: EmailClient,
+    base_uri: &str,
 ) -> Result<Server, std::io::Error> {
     unsafe {
         // std::env::set_var("RUST_LOG", "trace");
@@ -27,6 +32,7 @@ pub fn run(
     }
     let pg_pool = Data::new(pg_pool);
     let email_client = Data::new(email_client);
+    let base_uri = Data::new(ApplicationBaseUri(base_uri.to_string()));
 
     let server = HttpServer::new(move || {
         // let pgdb_repo = PGDBRepository::init();
@@ -37,6 +43,7 @@ pub fn run(
             .wrap(logger)
             .app_data(pg_pool.clone())
             .app_data(email_client.clone())
+            .app_data(base_uri.clone())
             .route("/", web::get().to(routes::index::index_page))
             .service(SwaggerUi::new("/docs/{_:.*}").url("/api-docs/openapi.json", openapi.clone()))
             .service(health_check)
@@ -48,6 +55,7 @@ pub fn run(
             .service(fail_task)
             .service(create_profile)
             .service(delete_profile)
+            .service(confirm_profile)
             .service(get_profile)
             .service(update_profile)
     })
@@ -90,7 +98,12 @@ impl Application {
         );
         let listener = TcpListener::bind(address)?;
         let port = listener.local_addr().unwrap().port();
-        let server = run(listener, pool, email_client)?;
+        let server = run(
+            listener,
+            pool,
+            email_client,
+            &configuration.application.app_uri,
+        )?;
 
         Ok(Self { port, server })
     }

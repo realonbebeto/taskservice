@@ -17,7 +17,8 @@ use utoipa::OpenApi;
         crate::routes::profile::get_profile,
         crate::routes::profile::create_profile,
         crate::routes::profile::update_profile,
-        crate::routes::profile::delete_profile
+        crate::routes::profile::delete_profile,
+        crate::routes::profile_confirm::confirm_profile
 
     )
 )]

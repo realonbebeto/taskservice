@@ -1,7 +1,7 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
 use actix_web::HttpResponse;
-use sqlx::{PgPool, QueryBuilder, Row};
+use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
 #[allow(unused)]
@@ -99,42 +99,31 @@ pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
     }
 }
 
-#[tracing::instrument("Saving new profile details in the database", skip(pool, profile))]
-pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), PGDBError> {
-    let exists_profile = db_get_profile(pool, &profile.id).await;
+#[tracing::instrument("Saving new profile details in the database", skip(tx, profile))]
+pub async fn db_create_profile(
+    tx: &mut Transaction<'_, Postgres>,
+    profile: &Profile,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO profile(id, first_name, last_name, email, status) VALUES($1, $2, $3, $4, $5)",
+    )
+    .bind(profile.id)
+    .bind(profile.first_name.as_ref())
+    .bind(profile.last_name.as_ref())
+    .bind(profile.email.as_ref())
+    .bind("pending_confirmation")
+    .execute(&mut **tx)
+    .await
+    .map_err(|e| {
+        tracing::error!("Failed to save new profile to database {e:?}");
+        e
+    })?;
 
-    match exists_profile {
-        Some(_) => Err(PGDBError(sqlx::Error::InvalidArgument(
-            "Profile already exists".into(),
-        ))),
-        None => {
-            let mut tx = pool.begin().await.unwrap();
-            let result = sqlx::query(
-                "INSERT INTO profile(id, first_name, last_name, email, status) VALUES($1, $2, $3, $4, $5) RETURNING id",
-            )
-            .bind(profile.id)
-            .bind(profile.first_name.as_ref())
-            .bind(profile.last_name.as_ref())
-            .bind(profile.email.as_ref())
-            .bind("confirmed")
-            .fetch_one(&mut *tx)
-            .await;
-
-            match result {
-                Ok(row) => {
-                    let id = row.get::<Uuid, _>("id");
-                    tracing::info!("Query execution successful: {:?}", id);
-                    tx.commit().await?;
-                    Ok(())
-                }
-                Err(e) => {
-                    tracing::error!("Failed to execute query: {:?}", e);
-                    tx.rollback().await?;
-                    Err(PGDBError(e))
-                }
-            }
-        }
-    }
+    tracing::info!(
+        "Query execution successful for profile of id: {:?}",
+        profile.id
+    );
+    Ok(())
 }
 
 pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<ProfileResponse> {
@@ -149,7 +138,7 @@ pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<ProfileResponse>
     match result {
         Ok(prf) => Some(prf),
         Err(e) => {
-            eprintln!("{e}");
+            tracing::error!("Failed to fetch profile of id {} due to {:?}", id, e);
             None
         }
     }

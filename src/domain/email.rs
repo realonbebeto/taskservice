@@ -11,7 +11,7 @@ impl ProfileEmail {
         if s.validate_email() {
             Ok(Self(s))
         } else {
-            Err(format!("{} is not a valid subscriber email.", s))
+            Err(format!("{} is not a valid email.", s))
         }
         // TODO: add validation
     }

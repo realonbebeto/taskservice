@@ -10,7 +10,7 @@ mod tests {
     #[actix_web::test]
     async fn health_check_works() {
         // Arrange
-        let app = spawn_app().await;
+        let mut app = spawn_app().await;
         let client = reqwest::Client::new();
 
         // Act
@@ -23,5 +23,7 @@ mod tests {
         //Assert
         assert!(response.status().is_success());
         assert_eq!(Some(0), response.content_length());
+
+        app.drop_test_db().await;
     }
 }

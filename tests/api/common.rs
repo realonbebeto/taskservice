@@ -11,6 +11,8 @@ use uuid::Uuid;
 pub struct TestApp {
     pub address: String,
     pub pool: PgPool,
+    pub connection: PgConnection,
+    pub db_name: String,
 }
 
 impl TestApp {
@@ -24,6 +26,13 @@ impl TestApp {
             .send()
             .await
             .expect("Failed to execute request.")
+    }
+
+    pub async fn drop_test_db(&mut self) {
+        self.connection
+            .execute(format!(r#"DROP DATABASE "{}" WITH (FORCE);"#, self.db_name).as_str())
+            .await
+            .expect("Failed to create database.");
     }
 }
 
@@ -58,7 +67,7 @@ pub async fn spawn_app() -> TestApp {
     };
 
     // Create and migrate the database
-    configure_database(&configuration.database).await;
+    let (_, connection) = configure_database(&configuration.database).await;
 
     let application = Application::build(&configuration)
         .await
@@ -70,10 +79,12 @@ pub async fn spawn_app() -> TestApp {
     TestApp {
         address,
         pool: get_connection_pool(&configuration.database),
+        connection,
+        db_name: configuration.database.db_name,
     }
 }
 
-pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
+async fn configure_database(config: &DatabaseSettings) -> (PgPool, PgConnection) {
     // Create database
     let mut connection = PgConnection::connect_with(&config.without_db())
         .await
@@ -94,5 +105,5 @@ pub async fn configure_database(config: &DatabaseSettings) -> PgPool {
         .await
         .expect("Failed to migrate the database");
 
-    connection_pool
+    (connection_pool, connection)
 }

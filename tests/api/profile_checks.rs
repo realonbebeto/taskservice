@@ -9,7 +9,7 @@ mod tests {
     #[actix_web::test]
     async fn create_profile_returns_200_for_valid_data() {
         //Arrange
-        let app = spawn_app().await;
+        let mut app = spawn_app().await;
 
         // Act
         let mut body = HashMap::new();
@@ -29,12 +29,14 @@ mod tests {
 
         assert_eq!(saved.get::<String, _>("email"), "n@gmail.com");
         assert_eq!(saved.get::<String, _>("first_name"), "Bebeto");
+
+        app.drop_test_db().await;
     }
 
     #[actix_web::test]
     async fn subscribe_returns_400_when_fields_are_present_but_invalid() {
         //Arrange
-        let app = spawn_app().await;
+        let mut app = spawn_app().await;
 
         let test_cases = vec![
             (
@@ -83,11 +85,13 @@ mod tests {
                 val_msg
             )
         }
+
+        app.drop_test_db().await;
     }
     #[actix_web::test]
     async fn create_profile_returns_400_for_missing_data() {
         //Arrange
-        let app = spawn_app().await;
+        let mut app = spawn_app().await;
         let test_cases = vec![
             ("last_name", ("Nitro", "missing first name")),
             ("first_name", ("Bebeto", "missing last name")),
@@ -109,5 +113,7 @@ mod tests {
                 val_message.1
             )
         }
+
+        app.drop_test_db().await;
     }
 }

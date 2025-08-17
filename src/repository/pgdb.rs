@@ -110,12 +110,13 @@ pub async fn db_create_profile(pool: &PgPool, profile: &Profile) -> Result<(), P
         None => {
             let mut tx = pool.begin().await.unwrap();
             let result = sqlx::query(
-                "INSERT INTO profile(id, first_name, last_name, email) VALUES($1, $2, $3, $4) RETURNING id",
+                "INSERT INTO profile(id, first_name, last_name, email, status) VALUES($1, $2, $3, $4, $5) RETURNING id",
             )
             .bind(profile.id)
             .bind(profile.first_name.as_ref())
             .bind(profile.last_name.as_ref())
             .bind(profile.email.as_ref())
+            .bind("confirmed")
             .fetch_one(&mut *tx)
             .await;
 

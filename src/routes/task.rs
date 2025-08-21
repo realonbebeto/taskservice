@@ -1,15 +1,12 @@
+use crate::error::task::TaskError;
 use crate::model::task::Task;
 use crate::model::task::{TaskState, TaskUpdate};
 use crate::repository::pgdb;
+use actix_web::HttpResponse;
 use actix_web::{
-    HttpResponse,
-    error::ResponseError,
-    get,
-    http::{StatusCode, header::ContentType},
-    post, put,
+    get, post, put,
     web::{Data, Json, Path},
 };
-use derive_more::Display;
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use utoipa::ToSchema;
@@ -24,14 +21,6 @@ pub struct TaskCompletionRequest {
     result_file: String,
 }
 
-#[derive(Debug, Display)]
-pub enum TaskError {
-    TaskNotFound,
-    TaskUpdateFailure,
-    TaskCreationFailure,
-    BadTaskRequest,
-}
-
 #[derive(Deserialize, ToSchema)]
 pub struct TaskCreateRequest {
     profile_id: String,
@@ -39,36 +28,15 @@ pub struct TaskCreateRequest {
     source_file: String,
 }
 
-impl ResponseError for TaskError {
-    fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
-        HttpResponse::build(self.status_code())
-            .insert_header(ContentType::json())
-            .body(self.to_string())
-    }
-    fn status_code(&self) -> StatusCode {
-        match self {
-            TaskError::TaskNotFound => StatusCode::NOT_FOUND,
-            TaskError::TaskUpdateFailure => StatusCode::FAILED_DEPENDENCY,
-            TaskError::TaskCreationFailure => StatusCode::FAILED_DEPENDENCY,
-            TaskError::BadTaskRequest => StatusCode::BAD_REQUEST,
-        }
-    }
-}
-
 async fn state_transition(
     pool: Data<PgPool>,
     task_global_id: String,
     new_state: TaskState,
     result_file: Option<String>,
-) -> Result<Json<TaskIdentifier>, TaskError> {
-    let task = match pgdb::db_get_task(pool.get_ref(), &task_global_id).await {
-        Some(task) => task,
-        None => return Err(TaskError::TaskNotFound),
-    };
+) -> Result<TaskIdentifier, TaskError> {
+    let task = pgdb::db_get_task(pool.get_ref(), &task_global_id).await?;
 
-    if !task.can_transition_to(&new_state) {
-        return Err(TaskError::BadTaskRequest);
-    };
+    task.can_transition_to(&new_state)?;
 
     let tokens: Vec<String> = task_global_id.split("_").map(String::from).collect();
 
@@ -82,12 +50,11 @@ async fn state_transition(
     );
 
     let task_identifier = task.get_global_id();
-    match pgdb::db_update_task(pool.get_ref(), task_update).await {
-        Ok(_) => Ok(Json(TaskIdentifier {
-            task_global_id: task_identifier,
-        })),
-        Err(_) => Err(TaskError::TaskUpdateFailure),
-    }
+    pgdb::db_update_task(pool.get_ref(), task_update).await?;
+
+    Ok(TaskIdentifier {
+        task_global_id: task_identifier,
+    })
 }
 #[utoipa::path(get, path = "/task/{task_global_id}",
 params(("task_gloabal_id"= String, Path, description="Global Id")),
@@ -96,12 +63,10 @@ responses((status=200, body=Task, description="Task by ID"), (status=404, descri
 pub async fn get_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
-) -> Result<Json<Task>, TaskError> {
-    let tsk = pgdb::db_get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id).await;
-    match tsk {
-        Some(tsk) => Ok(Json(tsk)),
-        None => Err(TaskError::TaskNotFound),
-    }
+) -> Result<HttpResponse, TaskError> {
+    pgdb::db_get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id).await?;
+    // TODO
+    Ok(HttpResponse::Ok().body("Successful"))
 }
 
 #[utoipa::path(
@@ -139,14 +104,16 @@ responses((status=200, description="Task start successful"),
 pub async fn start_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
-) -> Result<Json<TaskIdentifier>, TaskError> {
+) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
         task_identifier.into_inner().task_global_id,
         TaskState::InProgress,
         None,
     )
-    .await
+    .await?;
+
+    Ok(HttpResponse::Ok().body("Successful"))
 }
 
 #[utoipa::path(put, path="/task/{task_global_id}",
@@ -157,14 +124,16 @@ responses((status=200, description="Task pause successful"), (status=424, descri
 pub async fn pause_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
-) -> Result<Json<TaskIdentifier>, TaskError> {
+) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Paused,
         None,
     )
-    .await
+    .await?;
+
+    Ok(HttpResponse::Ok().body("Successful"))
 }
 #[utoipa::path(put, path="/task/{task_global_id}/complete",
 params(("task_global_id" = String, Path, description="Global Id")),
@@ -175,14 +144,16 @@ pub async fn complete_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
     complete_request: Json<TaskCompletionRequest>,
-) -> Result<Json<TaskIdentifier>, TaskError> {
+) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Completed,
         Some(complete_request.result_file.clone()),
     )
-    .await
+    .await?;
+
+    Ok(HttpResponse::Ok().body("Successful"))
 }
 
 #[utoipa::path(put, path="/task/{task_global_id}/fail",
@@ -192,12 +163,14 @@ responses((status=200, description="Task fail successful"), (status=424, descrip
 pub async fn fail_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
-) -> Result<Json<TaskIdentifier>, TaskError> {
+) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
         task_identifier.into_inner().task_global_id,
         TaskState::Failed,
         None,
     )
-    .await
+    .await?;
+
+    Ok(HttpResponse::Ok().body("Successful"))
 }

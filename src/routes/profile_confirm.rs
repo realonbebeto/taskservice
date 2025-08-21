@@ -2,9 +2,12 @@ use actix_web::{
     HttpResponse, get,
     web::{Data, Query},
 };
+use anyhow::Context;
 use serde::Deserialize;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
+
+use crate::error::profile::ProfileError;
 
 #[derive(Deserialize, Debug)]
 pub struct Parameters {
@@ -14,19 +17,21 @@ pub struct Parameters {
 #[tracing::instrument(name = "Confirm a pending profile" skip(parameters, pool))]
 #[utoipa::path(get, path = "/profile/confirm", params(("profile_token" = String, Query, description="Profile Token")),)]
 #[get("/profile/confirm")]
-pub async fn confirm_profile(parameters: Query<Parameters>, pool: Data<PgPool>) -> HttpResponse {
-    let id = match get_profile_id_from_token(&pool, &parameters.profile_token).await {
-        Ok(id) => id,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+pub async fn confirm_profile(
+    parameters: Query<Parameters>,
+    pool: Data<PgPool>,
+) -> Result<HttpResponse, ProfileError> {
+    let id = get_profile_id_from_token(&pool, &parameters.profile_token)
+        .await
+        .context("Associated profile id not found")?;
 
     match id {
-        None => HttpResponse::Unauthorized().finish(),
+        None => Ok(HttpResponse::Unauthorized().finish()),
         Some(profile_id) => {
-            if confirm_subscriber(&pool, profile_id).await.is_err() {
-                return HttpResponse::InternalServerError().finish();
-            }
-            HttpResponse::Ok().finish()
+            confirm_subscriber(&pool, profile_id)
+                .await
+                .context("failed to confirm new profile")?;
+            Ok(HttpResponse::Ok().finish())
         }
     }
 }

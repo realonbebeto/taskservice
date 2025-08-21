@@ -1,4 +1,6 @@
 use crate::email_client::EmailClient;
+use crate::error::profile::ProfileError;
+use crate::error::store_token::StoreTokenError;
 use crate::model::profile::{
     Profile, ProfileCreateRequest, ProfileIdentifier, ProfileResponse, ProfileUpdate,
 };
@@ -6,37 +8,12 @@ use crate::repository::pgdb;
 use crate::startup::ApplicationBaseUri;
 use crate::util::token_generator::generate_profile_token;
 use actix_web::{
-    HttpResponse, ResponseError, delete, get,
-    http::{StatusCode, header::ContentType},
-    post, put,
+    HttpResponse, delete, get, post, put,
     web::{Data, Json, Path},
 };
-use derive_more::Display;
+
+use anyhow::Context;
 use sqlx::{PgPool, Postgres, Transaction};
-
-#[derive(Debug, Display)]
-pub enum ProfileError {
-    NotFound,
-    UpdateFailure,
-    CreationFailure,
-    DeletionFailure,
-}
-
-impl ResponseError for ProfileError {
-    fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {
-        HttpResponse::build(self.status_code())
-            .insert_header(ContentType::json())
-            .body(self.to_string())
-    }
-    fn status_code(&self) -> StatusCode {
-        match self {
-            ProfileError::NotFound => StatusCode::NOT_FOUND,
-            &ProfileError::UpdateFailure => StatusCode::FAILED_DEPENDENCY,
-            ProfileError::CreationFailure => StatusCode::BAD_REQUEST,
-            ProfileError::DeletionFailure => StatusCode::FAILED_DEPENDENCY,
-        }
-    }
-}
 
 #[utoipa::path(get, path = "/profiles/{id:[0-9a-fA-F-]{36}}",
 params(("id" = String, Path, description="Profile Id")),
@@ -46,12 +23,11 @@ pub async fn get_profile(
     pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
 ) -> Result<Json<ProfileResponse>, ProfileError> {
-    let prf = pgdb::db_get_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
+    let prf = pgdb::db_get_profile(pool.get_ref(), &profile_identifier.into_inner().id)
+        .await
+        .context("Associated profile not found")?;
 
-    match prf {
-        Some(prf) => Ok(Json(prf)),
-        None => Err(ProfileError::NotFound),
-    }
+    Ok(Json(prf))
 }
 
 #[tracing::instrument(
@@ -97,16 +73,13 @@ pub async fn store_token(
     tx: &mut Transaction<'_, Postgres>,
     profile: &Profile,
     profile_token: &str,
-) -> Result<(), sqlx::Error> {
+) -> Result<(), StoreTokenError> {
     sqlx::query("INSERT INTO profile_tokens(profile_token, profile_id) VALUES($1, $2)")
         .bind(profile_token)
         .bind(profile.id)
         .execute(&mut **tx)
         .await
-        .map_err(|e| {
-            tracing::error!("Failed to execute query: {e:?}");
-            e
-        })?;
+        .map_err(StoreTokenError)?;
 
     Ok(())
 }
@@ -123,50 +96,43 @@ pub async fn create_profile(
     request: Json<ProfileCreateRequest>,
     email_client: Data<EmailClient>,
     base_uri: Data<ApplicationBaseUri>,
-) -> HttpResponse {
-    let profile: Profile = match request.into_inner().try_into() {
-        Ok(profile) => profile,
-        Err(msg) => return HttpResponse::BadRequest().body(msg),
-    };
+) -> Result<HttpResponse, ProfileError> {
+    let profile: Profile = request
+        .into_inner()
+        .try_into()
+        .map_err(ProfileError::ValidationError)?;
     // Check if the profile already exists
-    if pgdb::db_get_profile(&pool, &profile.id).await.is_some() {
-        return HttpResponse::Conflict().finish();
-    };
+    let r = pgdb::db_get_profile(&pool, &profile.id).await;
 
-    let mut transaction = match pool.begin().await {
-        Ok(t) => t,
-        Err(_) => return HttpResponse::InternalServerError().finish(),
-    };
+    if r.is_ok() {
+        return Ok(HttpResponse::Conflict().finish());
+    }
 
-    tracing::info!("Creating new profile in the database",);
-    if let Err(e) = pgdb::db_create_profile(&mut transaction, &profile).await {
-        tracing::error!("Failed to save new profile {e:?}",);
-        return HttpResponse::InternalServerError().finish();
-    };
+    let mut transaction = pool
+        .begin()
+        .await
+        .context("Failed to acquire a Postgres connection from the pool")?;
 
-    tracing::info!("New profile has been saved");
+    pgdb::db_create_profile(&mut transaction, &profile)
+        .await
+        .context("Failed to insert new profile in the database")?;
 
     let profile_token = generate_profile_token();
 
-    if store_token(&mut transaction, &profile, &profile_token)
+    store_token(&mut transaction, &profile, &profile_token)
         .await
-        .is_err()
-    {
-        return HttpResponse::InternalServerError().finish();
-    }
+        .context("Failed to store the confirmation token for a new profile.")?;
 
-    if transaction.commit().await.is_err() {
-        return HttpResponse::InternalServerError().finish();
-    }
-
-    if send_confirmation_email(&email_client, profile, &base_uri.0, &profile_token)
+    transaction
+        .commit()
         .await
-        .is_err()
-    {
-        return HttpResponse::InternalServerError().finish();
-    }
+        .context("Failed to commit SQL transaction to store new profile")?;
 
-    HttpResponse::Ok().body(profile_token)
+    send_confirmation_email(&email_client, profile, &base_uri.0, &profile_token)
+        .await
+        .context("Failed to send a confirmation email.")?;
+
+    Ok(HttpResponse::Ok().body(profile_token))
 }
 
 #[utoipa::path(post, path = "/profile/update",
@@ -181,15 +147,11 @@ pub async fn update_profile(
         request.first_name.as_deref(),
         request.last_name.as_deref(),
     );
-    let result = pgdb::db_update_profile(pool.get_ref(), &p_update).await;
+    pgdb::db_update_profile(pool.get_ref(), &p_update)
+        .await
+        .context("Failed to update profile")?;
 
-    match result {
-        Ok(_) => Ok(Json(p_update)),
-        Err(e) => {
-            eprintln!("{e:?}");
-            Err(ProfileError::UpdateFailure)
-        }
-    }
+    Ok(Json(p_update))
 }
 
 #[utoipa::path(delete, path = "/profile/{id}",
@@ -199,14 +161,10 @@ responses((status=200, description="User deletion successful"), (status=404, des
 pub async fn delete_profile(
     pool: Data<PgPool>,
     profile_identifier: Path<ProfileIdentifier>,
-) -> Result<Json<String>, ProfileError> {
-    let result = pgdb::delete_profile(pool.get_ref(), &profile_identifier.into_inner().id).await;
+) -> Result<HttpResponse, ProfileError> {
+    pgdb::delete_profile(pool.get_ref(), &profile_identifier.into_inner().id)
+        .await
+        .context("Failed to delete profile")?;
 
-    match result {
-        Ok(_) => Ok(Json("Profile deletion successful".into())),
-        Err(e) => {
-            eprintln!("{e:?}");
-            Err(ProfileError::DeletionFailure)
-        }
-    }
+    Ok(HttpResponse::Ok().body("Deletion successful"))
 }

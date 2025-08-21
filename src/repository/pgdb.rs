@@ -1,20 +1,9 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
-use actix_web::HttpResponse;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
-#[allow(unused)]
-#[derive(Debug)]
-pub struct PGDBError(sqlx::Error);
-
-impl From<sqlx::Error> for PGDBError {
-    fn from(value: sqlx::Error) -> Self {
-        PGDBError(value)
-    }
-}
-
-pub async fn db_create_task(pool: &PgPool, task: Task) -> Result<String, PGDBError> {
+pub async fn db_create_task(pool: &PgPool, task: Task) -> Result<String, sqlx::Error> {
     let mut tx = pool.begin().await.unwrap();
     let result = sqlx::query("INSERT INTO task(profile_id, task_uuid, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6) RETURNING task_uuid")
         .bind(task.profile_id)
@@ -33,12 +22,12 @@ pub async fn db_create_task(pool: &PgPool, task: Task) -> Result<String, PGDBErr
         }
         Err(e) => {
             tx.rollback().await?;
-            Err(PGDBError(e))
+            Err(e)
         }
     }
 }
 
-pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), PGDBError> {
+pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await.unwrap();
     let mut builder = QueryBuilder::new("UPDATE task SET ");
     let mut separated = builder.separated(", ");
@@ -76,12 +65,12 @@ pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<()
         }
         Err(e) => {
             tx.rollback().await?;
-            Err(PGDBError(e))
+            Err(e)
         }
     }
 }
 
-pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
+pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Result<Task, sqlx::Error> {
     let tokens: Vec<String> = task_id.split("_").map(String::from).collect();
 
     let mut tx = pool.begin().await.unwrap();
@@ -91,11 +80,8 @@ pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Option<Task> {
                 .fetch_one(&mut *tx).await;
 
     match result {
-        Ok(tsk) => Some(tsk),
-        Err(e) => {
-            eprintln!("{e}");
-            None
-        }
+        Ok(tsk) => Ok(tsk),
+        Err(e) => Err(e),
     }
 }
 
@@ -113,42 +99,27 @@ pub async fn db_create_profile(
     .bind(profile.email.as_ref())
     .bind("pending_confirmation")
     .execute(&mut **tx)
-    .await
-    .map_err(|e| {
-        tracing::error!("Failed to save new profile to database {e:?}");
-        e
-    })?;
-
-    tracing::info!(
-        "Query execution successful for profile of id: {:?}",
-        profile.id
-    );
+    .await?;
     Ok(())
 }
 
-pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Option<ProfileResponse> {
+pub async fn db_get_profile(pool: &PgPool, id: &Uuid) -> Result<ProfileResponse, sqlx::Error> {
     let result = sqlx::query_as::<_, ProfileResponse>(
         "SELECT id, first_name, last_name, email FROM profile WHERE id=$1",
     )
     .bind(id)
     .persistent(false)
     .fetch_one(pool)
-    .await;
+    .await?;
 
-    match result {
-        Ok(prf) => Some(prf),
-        Err(e) => {
-            tracing::error!("Failed to fetch profile of id {} due to {:?}", id, e);
-            None
-        }
-    }
+    Ok(result)
 }
 
-pub async fn delete_profile(pool: &PgPool, id: &Uuid) -> Result<HttpResponse, PGDBError> {
+pub async fn delete_profile(pool: &PgPool, id: &Uuid) -> Result<(), sqlx::Error> {
     let profile = db_get_profile(pool, id).await;
 
     match profile {
-        Some(_) => {
+        Ok(_) => {
             let mut tx = pool.begin().await.unwrap();
             let result = sqlx::query("DELETE FROM profile WHERE id = '$1' RETURNING id")
                 .bind(id)
@@ -158,22 +129,22 @@ pub async fn delete_profile(pool: &PgPool, id: &Uuid) -> Result<HttpResponse, PG
             match result {
                 Ok(_) => {
                     tx.commit().await?;
-                    Ok(HttpResponse::Ok().finish())
+                    Ok(())
                 }
                 Err(e) => {
                     tx.rollback().await?;
-                    Err(PGDBError(e))
+                    Err(e)
                 }
             }
         }
-        None => Err(PGDBError(sqlx::Error::RowNotFound)),
+        Err(e) => Err(e),
     }
 }
 
 pub async fn db_update_profile(
     pool: &PgPool,
     profile_update: &ProfileUpdate,
-) -> Result<(), PGDBError> {
+) -> Result<(), sqlx::Error> {
     let mut tx = pool.begin().await.unwrap();
     let mut builder = QueryBuilder::new("UPDATE profile SET ");
     let mut separated = builder.separated(", ");
@@ -199,7 +170,7 @@ pub async fn db_update_profile(
         }
         Err(e) => {
             tx.rollback().await?;
-            Err(PGDBError(e))
+            Err(e)
         }
     }
 }

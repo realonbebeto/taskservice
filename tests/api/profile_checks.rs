@@ -171,4 +171,26 @@ mod tests {
 
         app.drop_test_db().await;
     }
+
+    #[actix_web::test]
+    async fn subscribe_fails_on_fatal_db_error() {
+        // Arrange
+        let mut app = spawn_app().await;
+        let mut body = HashMap::new();
+        body.insert("first_name", "Bebeto");
+        body.insert("last_name", "Nitro");
+        body.insert("email", "x12345@gmail.com");
+
+        sqlx::query("ALTER TABLE profile_tokens DROP COLUMN profile_token;")
+            .execute(&app.pool)
+            .await
+            .unwrap();
+
+        let response = app.post_profiles(&body).await;
+
+        // Assert
+        assert_eq!(response.status().as_u16(), 500);
+
+        app.drop_test_db().await;
+    }
 }

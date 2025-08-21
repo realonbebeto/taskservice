@@ -4,6 +4,8 @@ use strum_macros::Display;
 use utoipa::ToSchema;
 use uuid::Uuid;
 
+use crate::error::task::TaskError;
+
 #[derive(sqlx::Type)]
 #[sqlx(type_name = "state")] // only for PostgreSQL to match a type definition
 #[sqlx(rename_all = "lowercase")]
@@ -42,8 +44,15 @@ impl Task {
         format!("{}_{}", self.profile_id, self.task_uuid)
     }
 
-    pub fn can_transition_to(&self, state: &TaskState) -> bool {
-        self.state != *state
+    pub fn can_transition_to(&self, state: &TaskState) -> Result<(), TaskError> {
+        if self.state == *state {
+            return Err(TaskError::TransitionError(format!(
+                "{} = {} transition not possible",
+                self.state, state
+            )));
+        }
+
+        Ok(())
     }
 }
 

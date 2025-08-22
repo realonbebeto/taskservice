@@ -6,9 +6,7 @@ use uuid::Uuid;
 
 use crate::error::task::TaskError;
 
-#[derive(sqlx::Type)]
-#[sqlx(type_name = "state")] // only for PostgreSQL to match a type definition
-#[sqlx(rename_all = "lowercase")]
+#[derive(sqlx::Type)] // only for PostgreSQL to match a type definition
 #[derive(Serialize, Deserialize, Display, Debug, Eq, PartialEq, ToSchema)]
 pub enum TaskState {
     NotStarted,
@@ -20,8 +18,8 @@ pub enum TaskState {
 
 #[derive(Serialize, Deserialize, FromRow, ToSchema)]
 pub struct Task {
-    pub profile_id: String,
-    pub task_uuid: String,
+    pub profile_id: Uuid,
+    pub task_uuid: Uuid,
     pub task_type: String,
     pub state: TaskState,
     pub source_file: String,
@@ -29,10 +27,10 @@ pub struct Task {
 }
 
 impl Task {
-    pub fn new(profile_id: String, task_type: String, source_file: String) -> Task {
+    pub fn new(profile_id: Uuid, task_type: String, source_file: String) -> Task {
         Task {
             profile_id,
-            task_uuid: Uuid::new_v4().to_string(),
+            task_uuid: Uuid::new_v4(),
             task_type,
             state: TaskState::NotStarted,
             source_file,

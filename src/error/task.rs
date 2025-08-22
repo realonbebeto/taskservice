@@ -1,28 +1,34 @@
+use crate::error::common::error_chain_fmt;
 use actix_web::ResponseError;
+use actix_web::http::StatusCode;
 
-#[derive(Debug)]
+#[derive(thiserror::Error)]
 pub enum TaskError {
-    TaskNotFound,
-    TaskUpdateFailure,
-    TaskCreationFailure,
-    BadTaskRequest,
-    DatabaseError(sqlx::Error),
+    // TaskNotFound,
+    // TaskUpdateFailure,
+    // TaskCreationFailure,
+    // BadTaskRequest,
+    // DatabaseError(sqlx::Error),
+    #[error("{0}")]
     TransitionError(String),
+    #[error(transparent)]
+    UnexpectedError(#[from] anyhow::Error),
 }
 
-impl From<sqlx::Error> for TaskError {
-    fn from(value: sqlx::Error) -> Self {
-        Self::DatabaseError(value)
-    }
-}
-
-impl std::fmt::Display for TaskError {
+impl std::fmt::Debug for TaskError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Failed to create a new subscriber")
+        error_chain_fmt(self, f)
     }
 }
 
-impl ResponseError for TaskError {}
+impl ResponseError for TaskError {
+    fn status_code(&self) -> StatusCode {
+        match self {
+            TaskError::TransitionError(_) => StatusCode::BAD_REQUEST,
+            TaskError::UnexpectedError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}
 
 // impl ResponseError for TaskError {
 //     fn error_response(&self) -> HttpResponse<actix_web::body::BoxBody> {

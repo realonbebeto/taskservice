@@ -47,7 +47,7 @@ pub async fn send_confirmation_email(
 
     email_client
         .send_email(
-            profile.email,
+            &profile.email,
             "Welcome",
             &format!(
                 "Welcome to our newsletter!<br/>\

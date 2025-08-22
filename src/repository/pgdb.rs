@@ -1,30 +1,23 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
-use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
+use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
-pub async fn db_create_task(pool: &PgPool, task: Task) -> Result<String, sqlx::Error> {
-    let mut tx = pool.begin().await.unwrap();
-    let result = sqlx::query("INSERT INTO task(profile_id, task_uuid, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6) RETURNING task_uuid")
+pub async fn db_create_task(
+    tx: &mut Transaction<'_, Postgres>,
+    task: &Task,
+) -> Result<(), sqlx::Error> {
+    // let mut tx = pool.begin().await.unwrap();
+    sqlx::query("INSERT INTO task(profile_id, task_uuid, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6)")
         .bind(task.profile_id)
         .bind(task.task_uuid)
-        .bind(task.task_type)
+        .bind(task.task_type.clone())
         .bind(task.state.to_string())
-        .bind(task.source_file)
-        .bind(task.result_file)
-        .fetch_one(&mut *tx).await;
+        .bind(task.source_file.clone())
+        .bind(task.result_file.as_ref())
+        .execute(&mut **tx).await?;
 
-    match result {
-        Ok(row) => {
-            let task_uuid: String = row.get("task_uuid");
-            tx.commit().await?;
-            Ok(task_uuid)
-        }
-        Err(e) => {
-            tx.rollback().await?;
-            Err(e)
-        }
-    }
+    Ok(())
 }
 
 pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<(), sqlx::Error> {

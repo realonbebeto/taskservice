@@ -59,6 +59,15 @@ impl TestApp {
         ConfirmationLinks { html, plain_text }
     }
 
+    pub async fn post_tasks(&self, body: serde_json::Value) -> reqwest::Response {
+        reqwest::Client::new()
+            .post(format!("{}/task", &self.address))
+            .json(&body)
+            .send()
+            .await
+            .expect("Failed to execute new task request")
+    }
+
     pub async fn drop_test_db(&mut self) {
         self.connection
             .execute(format!(r#"DROP DATABASE "{}" WITH (FORCE);"#, self.db_name).as_str())

@@ -1,6 +1,8 @@
 use crate::common;
 
 mod tests {
+    use fake::Fake;
+    use fake::faker::internet::en::{Password, Username};
     use std::collections::HashMap;
     use uuid::Uuid;
     use wiremock::{
@@ -8,15 +10,19 @@ mod tests {
         matchers::{any, method, path},
     };
 
+    use super::common::spawn_app;
     use crate::common::{ConfirmationLinks, TestApp};
 
-    use super::common::spawn_app;
-
     async fn create_unconfirmed_profile(app: &TestApp) -> ConfirmationLinks {
+        let test_profile = &app.test_profile;
+
+        // Act
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "n@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         let _mock_guard = Mock::given(path("/v3/send"))
             .and(method("POST"))
@@ -63,7 +69,8 @@ mod tests {
         // Act
 
         // task payload structure
-        let task_request_body = serde_json::json!({"profile_id": Uuid::new_v4().to_string(), "task_type": "feature", "source_file": "init.txt"});
+        let task_request_body =
+            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
         let response = app.post_tasks(task_request_body).await;
 
@@ -87,7 +94,8 @@ mod tests {
             .await;
 
         // task payload structure
-        let task_request_body = serde_json::json!({"profile_id": Uuid::new_v4().to_string(), "task_type": "feature", "source_file": "init.txt"});
+        let task_request_body =
+            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
         let response = app.post_tasks(task_request_body).await;
 
@@ -99,12 +107,14 @@ mod tests {
 
     #[actix_web::test]
     async fn tasks_returns_400_for_invalid_data() {
+        // Arrange
         let mut app = spawn_app().await;
+        app.test_profile.store_test_profile(&app.pool).await;
 
         let test_cases = vec![
             (
-                serde_json::json!({"task_type": "feature", "source_file": "init.txt"}),
-                "missing profile_id",
+                serde_json::json!({"task_type": "feature"}),
+                "missing source_file",
             ),
             (
                 serde_json::json!({"profile_id": Uuid::new_v4().to_string()}),
@@ -122,6 +132,88 @@ mod tests {
                 error_message
             );
         }
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn requests_missing_authorization_are_rejected() {
+        // Arrange
+        let mut app = spawn_app().await;
+
+        // task payload structure
+        let task_request_body =
+            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/task", &app.address))
+            .json(&task_request_body)
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Assert
+        assert_eq!(401, response.status().as_u16());
+        assert_eq!(
+            r#"Basic realm="task-service""#,
+            response.headers()["WWW-Authenticate"]
+        );
+
+        // Cleanup
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn non_existing_profile_is_rejected() {
+        // Arrange
+        let mut app = spawn_app().await;
+
+        //Random credentials
+        let username = Username().fake::<String>();
+        let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
+
+        let response = reqwest::Client::new()
+            .post(format!("{}/task", &app.address))
+            .basic_auth(username, Some(password))
+            .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        //Assert
+        assert_eq!(401, response.status().as_u16());
+        assert_eq!(
+            r#"Basic realm="task-service""#,
+            response.headers()["WWW-Authenticate"]
+        );
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn invalid_password_is_rejected() {
+        // Arrange
+        let mut app = spawn_app().await;
+        app.test_profile.store_test_profile(&app.pool).await;
+
+        //Random password
+        let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
+        assert_ne!(app.test_profile.password.as_ref(), password);
+
+        let response = reqwest::Client::new()
+            .post(&format!("{}/task", &app.address))
+            .basic_auth(app.test_profile.username.as_ref(), Some(password))
+            .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        //Assert
+        assert_eq!(401, response.status().as_u16());
+        assert_eq!(
+            r#"Basic realm="task-service""#,
+            response.headers()["WWW-Authenticate"]
+        );
 
         app.drop_test_db().await;
     }

@@ -2,6 +2,8 @@ use crate::common;
 
 mod tests {
 
+    use crate::test_profile::TestProfile;
+
     use super::common::spawn_app;
     use sqlx::Row;
     use std::collections::HashMap;
@@ -12,12 +14,15 @@ mod tests {
     async fn create_profile_returns_200_for_valid_data() {
         //Arrange
         let mut app = spawn_app().await;
+        let test_profile = TestProfile::generate(false);
 
         // Act
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "n@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         // Mock server
         Mock::given(path("v3/send"))
@@ -39,11 +44,14 @@ mod tests {
     async fn profile_persists_the_new_profile() {
         //Arrange
         let mut app = spawn_app().await;
+        let test_profile = TestProfile::generate(false);
 
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "n@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         // Mock server
         Mock::given(path("v3/send"))
@@ -59,9 +67,12 @@ mod tests {
             .await
             .expect("Failed to fetch profile");
 
-        assert_eq!(saved.get::<String, _>("email"), "n@gmail.com");
-        assert_eq!(saved.get::<String, _>("first_name"), "Bebeto");
-        assert_eq!(saved.get::<String, _>("status"), "pending_confirmation");
+        assert_eq!(saved.get::<String, _>("email"), test_profile.email.as_ref());
+        assert_eq!(
+            saved.get::<String, _>("first_name"),
+            test_profile.first_name.as_ref()
+        );
+        assert_eq!(saved.get::<String, _>("status"), test_profile.status);
 
         app.drop_test_db().await;
     }
@@ -158,6 +169,8 @@ mod tests {
         body.insert("first_name", "Bebeto");
         body.insert("last_name", "Nitro");
         body.insert("email", "x12345@gmail.com");
+        body.insert("username", "nbebeto");
+        body.insert("password", "12345567890");
 
         Mock::given(path("v3/send"))
             .and(method("POST"))
@@ -180,6 +193,8 @@ mod tests {
         body.insert("first_name", "Bebeto");
         body.insert("last_name", "Nitro");
         body.insert("email", "x12345@gmail.com");
+        body.insert("username", "nbebeto");
+        body.insert("password", "12345567890");
 
         sqlx::query("ALTER TABLE profile_tokens DROP COLUMN profile_token;")
             .execute(&app.pool)

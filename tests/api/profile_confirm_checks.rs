@@ -6,6 +6,8 @@ mod tests {
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, ResponseTemplate};
 
+    use crate::test_profile::TestProfile;
+
     #[actix_web::test]
     async fn confirmations_without_token_are_rejected_with_a_400() {
         // Arrange
@@ -25,10 +27,15 @@ mod tests {
     async fn create_profile_sends_a_confirmation_email_with_a_link() {
         // Arrange
         let mut app = spawn_app().await;
+        let test_profile = TestProfile::generate(false);
+
+        // Act
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "x12345@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         Mock::given(path("v3/send"))
             .and(method("POST"))
@@ -52,10 +59,15 @@ mod tests {
     async fn link_returned_by_profile_create_returns_200_if_called() {
         // Arrange
         let mut app = spawn_app().await;
+        let test_profile = TestProfile::generate(false);
+
+        // Act
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "x12345@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         Mock::given(path("/v3/send"))
             .and(method("POST"))
@@ -80,10 +92,14 @@ mod tests {
     async fn clicking_on_the_confirmation_link_confirms_a_profile() {
         // Arrange
         let mut app = spawn_app().await;
+        let test_profile = TestProfile::generate(false);
+
         let mut body = HashMap::new();
-        body.insert("first_name", "Bebeto");
-        body.insert("last_name", "Nitro");
-        body.insert("email", "x12345@gmail.com");
+        body.insert("first_name", test_profile.first_name.as_ref());
+        body.insert("last_name", test_profile.first_name.as_ref());
+        body.insert("email", test_profile.email.as_ref());
+        body.insert("username", test_profile.username.as_ref());
+        body.insert("password", test_profile.password.as_ref());
 
         Mock::given(path("/v3/send"))
             .and(method("POST"))
@@ -105,8 +121,11 @@ mod tests {
             .await
             .expect("Failed to fetch profile");
 
-        assert_eq!(saved.get::<String, _>("email"), "x12345@gmail.com");
-        assert_eq!(saved.get::<String, _>("first_name"), "Bebeto");
+        assert_eq!(saved.get::<String, _>("email"), test_profile.email.as_ref());
+        assert_eq!(
+            saved.get::<String, _>("first_name"),
+            test_profile.first_name.as_ref()
+        );
         assert_eq!(saved.get::<String, _>("status"), "confirmed");
 
         app.drop_test_db().await;

@@ -1,5 +1,7 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
+use argon2::password_hash::{SaltString, rand_core};
+use argon2::{Argon2, Params, PasswordHasher};
 use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
 use uuid::Uuid;
 
@@ -83,14 +85,26 @@ pub async fn db_create_profile(
     tx: &mut Transaction<'_, Postgres>,
     profile: &Profile,
 ) -> Result<(), sqlx::Error> {
+    let salt = SaltString::generate(&mut rand_core::OsRng);
+    let password = Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        Params::new(15000, 2, 1, None).unwrap(),
+    )
+    .hash_password(profile.password.as_ref().as_bytes(), &salt)
+    .unwrap()
+    .to_string();
+
     sqlx::query(
-        "INSERT INTO profile(id, first_name, last_name, email, status) VALUES($1, $2, $3, $4, $5)",
+        "INSERT INTO profile(id, first_name, last_name, email, status, username, password) VALUES($1, $2, $3, $4, $5, $6, $7)",
     )
     .bind(profile.id)
     .bind(profile.first_name.as_ref())
     .bind(profile.last_name.as_ref())
     .bind(profile.email.as_ref())
     .bind("pending_confirmation")
+    .bind(profile.username.as_ref())
+    .bind(password)
     .execute(&mut **tx)
     .await?;
     Ok(())

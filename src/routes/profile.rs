@@ -86,7 +86,7 @@ pub async fn store_token(
 
 #[tracing::instrument(name = "Registering a new profile", 
 skip(pool, request, email_client),
-fields(profile_fname=%request.first_name, profile_email=%request.email)
+fields(profile_fname=%request.first_name, profile_email=%request.email, profile_username=%request.username)
 )]
 #[utoipa::path(post, path = "/profile",
 responses((status=200, body=Profile, description="User creation successful"), (status=404, description="User creation unsuccessful"),))]
@@ -101,6 +101,7 @@ pub async fn create_profile(
         .into_inner()
         .try_into()
         .map_err(ProfileError::ValidationError)?;
+
     // Check if the profile already exists
     let r = pgdb::db_get_profile(&pool, &profile.id).await;
 

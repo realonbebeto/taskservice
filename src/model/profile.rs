@@ -1,4 +1,6 @@
-use crate::domain::{email::ProfileEmail, name::ProfileName};
+use crate::domain::{
+    email::ProfileEmail, name::ProfileName, password::Password, username::ProfileUsername,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::FromRow;
 use utoipa::ToSchema;
@@ -10,6 +12,8 @@ pub struct Profile {
     pub first_name: ProfileName,
     pub last_name: ProfileName,
     pub email: ProfileEmail,
+    pub username: ProfileUsername,
+    pub password: Password,
 }
 
 impl TryFrom<ProfileCreateRequest> for Profile {
@@ -19,12 +23,16 @@ impl TryFrom<ProfileCreateRequest> for Profile {
         let first_name = ProfileName::parse(value.first_name)?;
         let last_name = ProfileName::parse(value.last_name)?;
         let email = ProfileEmail::parse(value.email)?;
+        let username = ProfileUsername::parse(value.username)?;
+        let password = Password::parse(value.password)?;
 
         Ok(Profile {
             id: Uuid::new_v4(),
             first_name,
             last_name,
             email,
+            username,
+            password,
         })
     }
 }
@@ -69,4 +77,6 @@ pub struct ProfileCreateRequest {
     pub first_name: String,
     pub last_name: String,
     pub email: String,
+    pub username: String,
+    pub password: String,
 }

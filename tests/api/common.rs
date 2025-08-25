@@ -8,6 +8,8 @@ use taskservice::telemetry::{get_tracing_subscriber, init_tracing_subscriber};
 use uuid::Uuid;
 use wiremock::MockServer;
 
+use crate::test_profile::TestProfile;
+
 pub struct ConfirmationLinks {
     pub html: reqwest::Url,
     pub plain_text: reqwest::Url,
@@ -21,13 +23,11 @@ pub struct TestApp {
     pub db_name: String,
     pub email_server: MockServer,
     pub port: u16,
+    pub test_profile: TestProfile,
 }
 
 impl TestApp {
-    pub async fn post_profiles(
-        &self,
-        body: &HashMap<&'static str, &'static str>,
-    ) -> reqwest::Response {
+    pub async fn post_profiles(&self, body: &HashMap<&'static str, &str>) -> reqwest::Response {
         reqwest::Client::new()
             .post(&format!("{}/profile", &self.address))
             .json(&body)
@@ -60,13 +60,26 @@ impl TestApp {
     }
 
     pub async fn post_tasks(&self, body: serde_json::Value) -> reqwest::Response {
+        let username = self.test_profile.username.as_ref();
+        let password = self.test_profile.password.as_ref();
+        dbg!(&username, &password);
         reqwest::Client::new()
             .post(format!("{}/task", &self.address))
+            .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute new task request")
     }
+
+    // pub async fn test_profile(&self) -> (String, String) {
+    //     let row = sqlx::query("SELECT username, password FROM profile LIMIT 1")
+    //         .fetch_one(&self.pool)
+    //         .await
+    //         .expect("Failed to create test users.");
+
+    //     (row.get("username"), row.get("password"))
+    // }
 
     pub async fn drop_test_db(&mut self) {
         self.connection
@@ -122,17 +135,19 @@ pub async fn spawn_app() -> TestApp {
     let port = application.port();
     let address = format!("http://127.0.0.1:{}", port);
     let _ = tokio::spawn(application.run_until_stopped());
+    let test_profile = TestProfile::generate(false);
 
-    dbg!(&address);
-
-    TestApp {
+    let test_app = TestApp {
         address,
         pool: get_connection_pool(&configuration.database),
         connection,
         db_name: configuration.database.db_name,
         email_server,
         port,
-    }
+        test_profile,
+    };
+
+    test_app
 }
 
 async fn configure_database(config: &DatabaseSettings) -> (PgPool, PgConnection) {

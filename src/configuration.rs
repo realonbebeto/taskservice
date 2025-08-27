@@ -54,6 +54,8 @@ pub struct ApplicationSettings {
     pub app_environment: Environment,
     #[envconfig(from = "APP_URI")]
     pub app_uri: String,
+    #[envconfig(from = "HMAC_SECRET")]
+    pub hmac_secret: String,
 }
 
 #[derive(Deserialize, Envconfig)]

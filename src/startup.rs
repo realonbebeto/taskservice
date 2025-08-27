@@ -2,14 +2,17 @@ use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes;
 use crate::routes::health_check::health_check;
+use crate::routes::login::{log_in, log_in_check};
 use crate::routes::profile::{create_profile, delete_profile, get_profile, update_profile};
 use crate::routes::profile_confirm::confirm_profile;
 use crate::routes::task::{
-    complete_task, fail_task, get_task, pause_task, start_task, submit_task,
+    complete_task, create_task, fail_task, get_task, pause_task, start_task,
 };
+use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::web;
 use actix_web::{App, HttpServer, web::Data};
+use actix_web_flash_messages::{FlashMessagesFramework, storage::CookieMessageStore};
 use sqlx::PgPool;
 use sqlx::postgres::PgPoolOptions;
 use std::net::TcpListener;
@@ -25,6 +28,7 @@ pub fn run(
     pg_pool: PgPool,
     email_client: EmailClient,
     base_uri: &str,
+    hmac_secret: &str,
 ) -> Result<Server, std::io::Error> {
     unsafe {
         // std::env::set_var("RUST_LOG", "trace");
@@ -33,6 +37,8 @@ pub fn run(
     let pg_pool = Data::new(pg_pool);
     let email_client = Data::new(email_client);
     let base_uri = Data::new(ApplicationBaseUri(base_uri.to_string()));
+    let message_store = CookieMessageStore::builder(Key::from(hmac_secret.as_bytes())).build();
+    let message_framework = FlashMessagesFramework::builder(message_store).build();
 
     let server = HttpServer::new(move || {
         // let pgdb_repo = PGDBRepository::init();
@@ -40,6 +46,7 @@ pub fn run(
         let logger = TracingLogger::default();
         let openapi = routes::docs::ApiDoc::openapi();
         App::new()
+            .wrap(message_framework.clone())
             .wrap(logger)
             .app_data(pg_pool.clone())
             .app_data(email_client.clone())
@@ -51,13 +58,15 @@ pub fn run(
             .service(pause_task)
             .service(complete_task)
             .service(start_task)
-            .service(submit_task)
+            .service(create_task)
             .service(fail_task)
             .service(create_profile)
             .service(delete_profile)
             .service(confirm_profile)
             .service(get_profile)
             .service(update_profile)
+            .service(log_in)
+            .service(log_in_check)
     })
     .listen(listener)?
     .run();
@@ -103,6 +112,7 @@ impl Application {
             pool,
             email_client,
             &configuration.application.app_uri,
+            &configuration.application.hmac_secret,
         )?;
 
         Ok(Self { port, server })

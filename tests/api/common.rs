@@ -24,11 +24,24 @@ pub struct TestApp {
     pub email_server: MockServer,
     pub port: u16,
     pub test_profile: TestProfile,
+    pub api_client: reqwest::Client,
 }
 
 impl TestApp {
+    pub async fn post_login<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(&format!("{}/login", &self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to execute login request")
+    }
+
     pub async fn post_profiles(&self, body: &HashMap<&'static str, &str>) -> reqwest::Response {
-        reqwest::Client::new()
+        self.api_client
             .post(&format!("{}/profile", &self.address))
             .json(&body)
             .send()
@@ -62,14 +75,30 @@ impl TestApp {
     pub async fn post_tasks(&self, body: serde_json::Value) -> reqwest::Response {
         let username = self.test_profile.username.as_ref();
         let password = self.test_profile.password.as_ref();
-        dbg!(&username, &password);
-        reqwest::Client::new()
+
+        self.api_client
             .post(format!("{}/task", &self.address))
             .basic_auth(username, Some(password))
             .json(&body)
             .send()
             .await
             .expect("Failed to execute new task request")
+    }
+
+    pub async fn get_login(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/login", &self.address))
+            .send()
+            .await
+            .expect("failed to execute request")
+    }
+
+    pub async fn get_health(&self) -> reqwest::Response {
+        self.api_client
+            .get(&format!("{}/health_check", &self.address))
+            .send()
+            .await
+            .expect("failed to execute request")
     }
 
     // pub async fn test_profile(&self) -> (String, String) {
@@ -137,6 +166,12 @@ pub async fn spawn_app() -> TestApp {
     let _ = tokio::spawn(application.run_until_stopped());
     let test_profile = TestProfile::generate(false);
 
+    // reqwest::Client
+    let api_client = reqwest::Client::builder()
+        .cookie_store(true)
+        .build()
+        .unwrap();
+
     let test_app = TestApp {
         address,
         pool: get_connection_pool(&configuration.database),
@@ -145,6 +180,7 @@ pub async fn spawn_app() -> TestApp {
         email_server,
         port,
         test_profile,
+        api_client,
     };
 
     test_app

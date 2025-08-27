@@ -145,7 +145,8 @@ mod tests {
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
-        let response = reqwest::Client::new()
+        let response = app
+            .api_client
             .post(format!("{}/task", &app.address))
             .json(&task_request_body)
             .send()
@@ -172,7 +173,8 @@ mod tests {
         let username = Username().fake::<String>();
         let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
 
-        let response = reqwest::Client::new()
+        let response = app
+            .api_client
             .post(format!("{}/task", &app.address))
             .basic_auth(username, Some(password))
             .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))
@@ -200,7 +202,8 @@ mod tests {
         let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
         assert_ne!(app.test_profile.password.as_ref(), password);
 
-        let response = reqwest::Client::new()
+        let response = app
+            .api_client
             .post(&format!("{}/task", &app.address))
             .basic_auth(app.test_profile.username.as_ref(), Some(password))
             .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))

@@ -11,14 +11,9 @@ mod tests {
     async fn health_check_works() {
         // Arrange
         let mut app = spawn_app().await;
-        let client = reqwest::Client::new();
 
         // Act
-        let response = client
-            .get(&format!("{}/health_check", app.address))
-            .send()
-            .await
-            .expect("failed to execute request");
+        let response = app.get_health().await;
 
         //Assert
         assert!(response.status().is_success());

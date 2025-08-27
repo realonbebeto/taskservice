@@ -9,7 +9,7 @@ use utoipa::OpenApi;
     paths(
         crate::routes::health_check::health_check,
         crate::routes::task::get_task,
-        crate::routes::task::submit_task,
+        crate::routes::task::create_task,
         crate::routes::task::start_task,
         crate::routes::task::pause_task,
         crate::routes::task::complete_task,
@@ -18,7 +18,9 @@ use utoipa::OpenApi;
         crate::routes::profile::create_profile,
         crate::routes::profile::update_profile,
         crate::routes::profile::delete_profile,
-        crate::routes::profile_confirm::confirm_profile
+        crate::routes::profile_confirm::confirm_profile,
+        crate::routes::login::log_in,
+        crate::routes::login::log_in_check
 
     )
 )]

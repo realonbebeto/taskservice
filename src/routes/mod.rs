@@ -1,6 +1,7 @@
 pub mod docs;
 pub mod health_check;
 pub mod index;
+pub mod login;
 pub mod profile;
 pub mod profile_confirm;
 pub mod task;

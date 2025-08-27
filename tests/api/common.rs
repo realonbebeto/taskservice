@@ -101,13 +101,14 @@ impl TestApp {
             .expect("failed to execute request")
     }
 
-    // pub async fn test_profile(&self) -> (String, String) {
-    //     let row = sqlx::query("SELECT username, password FROM profile LIMIT 1")
+    // pub async fn get_profile_id(&self) -> Uuid {
+    //     let row = sqlx::query("SELECT id FROM profile WHERE username=$1")
+    //         .bind(self.test_profile.username.as_ref())
     //         .fetch_one(&self.pool)
     //         .await
     //         .expect("Failed to create test users.");
 
-    //     (row.get("username"), row.get("password"))
+    //     row.get("id")
     // }
 
     pub async fn drop_test_db(&mut self) {

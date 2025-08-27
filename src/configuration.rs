@@ -90,6 +90,8 @@ pub struct Settings {
     pub application: ApplicationSettings,
     #[envconfig(nested)]
     pub email_client: EmailClientSettings,
+    #[envconfig(from = "REDIS_URI")]
+    pub redis_uri: String,
 }
 
 pub fn get_configuration() -> Result<Settings, envconfig::Error> {

@@ -1,6 +1,7 @@
 use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes;
+use crate::routes::admin::dashboard::admin_dashboard;
 use crate::routes::health_check::health_check;
 use crate::routes::login::{log_in, log_in_check};
 use crate::routes::profile::{create_profile, delete_profile, get_profile, update_profile};
@@ -8,6 +9,8 @@ use crate::routes::profile_confirm::confirm_profile;
 use crate::routes::task::{
     complete_task, create_task, fail_task, get_task, pause_task, start_task,
 };
+use actix_session::SessionMiddleware;
+use actix_session::storage::RedisSessionStore;
 use actix_web::cookie::Key;
 use actix_web::dev::Server;
 use actix_web::web;
@@ -23,13 +26,14 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(Debug)]
 pub struct ApplicationBaseUri(pub String);
 
-pub fn run(
+async fn run(
     listener: TcpListener,
     pg_pool: PgPool,
     email_client: EmailClient,
     base_uri: &str,
-    hmac_secret: &str,
-) -> Result<Server, std::io::Error> {
+    secret: &str,
+    redis_uri: &str,
+) -> Result<Server, anyhow::Error> {
     unsafe {
         // std::env::set_var("RUST_LOG", "trace");
         std::env::set_var("RUST_BACKTRACE", "1");
@@ -37,8 +41,10 @@ pub fn run(
     let pg_pool = Data::new(pg_pool);
     let email_client = Data::new(email_client);
     let base_uri = Data::new(ApplicationBaseUri(base_uri.to_string()));
-    let message_store = CookieMessageStore::builder(Key::from(hmac_secret.as_bytes())).build();
+    let secret_key = Key::from(secret.as_bytes());
+    let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
+    let redis_store = RedisSessionStore::new(redis_uri).await?;
 
     let server = HttpServer::new(move || {
         // let pgdb_repo = PGDBRepository::init();
@@ -47,6 +53,10 @@ pub fn run(
         let openapi = routes::docs::ApiDoc::openapi();
         App::new()
             .wrap(message_framework.clone())
+            .wrap(SessionMiddleware::new(
+                redis_store.clone(),
+                secret_key.clone(),
+            ))
             .wrap(logger)
             .app_data(pg_pool.clone())
             .app_data(email_client.clone())
@@ -67,6 +77,7 @@ pub fn run(
             .service(update_profile)
             .service(log_in)
             .service(log_in_check)
+            .service(admin_dashboard)
     })
     .listen(listener)?
     .run();
@@ -84,7 +95,7 @@ pub struct Application {
 }
 
 impl Application {
-    pub async fn build(configuration: &Settings) -> Result<Self, std::io::Error> {
+    pub async fn build(configuration: &Settings) -> Result<Self, anyhow::Error> {
         let pool = get_connection_pool(&configuration.database);
         let sender_email = configuration
             .email_client
@@ -113,7 +124,9 @@ impl Application {
             email_client,
             &configuration.application.app_uri,
             &configuration.application.hmac_secret,
-        )?;
+            &configuration.redis_uri,
+        )
+        .await?;
 
         Ok(Self { port, server })
     }

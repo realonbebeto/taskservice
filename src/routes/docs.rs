@@ -20,7 +20,8 @@ use utoipa::OpenApi;
         crate::routes::profile::delete_profile,
         crate::routes::profile_confirm::confirm_profile,
         crate::routes::login::log_in,
-        crate::routes::login::log_in_check
+        crate::routes::login::log_in_check,
+        crate::routes::admin::dashboard::admin_dashboard
 
     )
 )]

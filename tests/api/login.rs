@@ -35,4 +35,48 @@ mod tests {
 
         app.drop_test_db().await;
     }
+
+    #[actix_web::test]
+    async fn session_persists_and_extends_to_other_routes() {
+        // Arrange
+        let mut app = spawn_app().await;
+        app.test_profile.store_test_profile(&app.pool).await;
+
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(), "password": app.test_profile.password.as_ref()});
+
+        app.post_login(&login_body).await;
+        let response = app
+            .api_client
+            .get(format!("{}/admin/dashboard", &app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Confirm if dragonfly a live session
+        let response: LoginResponse = response.json().await.unwrap();
+        let pattern = format!("Welcome {}", app.test_profile.username.as_ref().to_string());
+        assert!(response.message.contains(&pattern));
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn you_must_be_logged_in_to_access_admin_dashboard() {
+        // Arrange
+        let mut app = spawn_app().await;
+        app.test_profile.store_test_profile(&app.pool).await;
+
+        let response = app
+            .api_client
+            .get(format!("{}/admin/dashboard", &app.address))
+            .send()
+            .await
+            .expect("Failed to execute request");
+
+        // Confirm if dragonfly a live session
+        let response: LoginResponse = response.json().await.unwrap();
+        assert!(response.message.contains("Welcome Person of the Internet"));
+
+        app.drop_test_db().await;
+    }
 }

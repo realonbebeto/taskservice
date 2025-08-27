@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, cookie::Cookie, get, post, web};
+use actix_web::{HttpResponse, get, post, web};
 
 use secrecy::SecretBox;
 use sqlx::PgPool;
@@ -9,6 +9,7 @@ use crate::{
     error::authentication::{AuthError, LoginError, LoginResponse},
 };
 
+use crate::session_state::TypedSession;
 use actix_web_flash_messages::{IncomingFlashMessages, Level};
 use std::fmt::Write;
 
@@ -18,12 +19,13 @@ pub struct LoginData {
     password: String,
 }
 
-#[tracing::instrument(name = "Logging In", skip(form, pool))]
+#[tracing::instrument(name = "Logging In", skip(form, pool, session))]
 #[utoipa::path(post, path = "/login", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
 #[post("/login")]
 async fn log_in(
     form: web::Form<LoginData>,
     pool: web::Data<PgPool>,
+    session: TypedSession,
 ) -> Result<HttpResponse, LoginError> {
     let credentials = Credentials {
         username: form.0.username,
@@ -35,11 +37,16 @@ async fn log_in(
     match validate_credentials(credentials, &pool).await {
         Ok(profile_id) => {
             tracing::Span::current().record("profile_id", tracing::field::display(&profile_id));
-            Ok(HttpResponse::Ok()
-                .cookie(Cookie::new("_flash", "Authentication successful"))
-                .json(LoginResponse {
-                    message: "login successful".into(),
-                }))
+
+            session.renew();
+
+            session
+                .insert_profile_id(profile_id)
+                .map_err(|e| LoginError::UnexpectedError(e.into()))?;
+
+            Ok(HttpResponse::Ok().json(LoginResponse {
+                message: "login successful".into(),
+            }))
         }
         Err(e) => match e {
             AuthError::InvalidCredentials(_) => Err(LoginError::AuthError(e.into())),

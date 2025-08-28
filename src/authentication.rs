@@ -2,7 +2,8 @@ use crate::error::authentication::AuthError;
 use crate::telemetry::spawn_blocking_with_tracing;
 use actix_web::http::header::HeaderMap;
 use anyhow::Context;
-use argon2::{Argon2, PasswordHash, PasswordVerifier};
+use argon2::password_hash::{SaltString, rand_core};
+use argon2::{Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier};
 use base64::Engine;
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::{PgPool, Row};
@@ -108,4 +109,38 @@ pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::
         username,
         password: SecretBox::new(Box::new(password)),
     })
+}
+
+#[tracing::instrument(name = "Update Password", skip(password, pool))]
+pub async fn update_password(
+    profile_id: Uuid,
+    password: String,
+    pool: &PgPool,
+) -> Result<(), anyhow::Error> {
+    let password = spawn_blocking_with_tracing(move || compute_password(password))
+        .await?
+        .context("Failed to hash password")?;
+
+    sqlx::query("UPDATE profile SET password = $1 WHERE id = $2")
+        .bind(password)
+        .bind(profile_id)
+        .execute(pool)
+        .await
+        .context("Failed to change user's password in the db")?;
+
+    Ok(())
+}
+
+pub fn compute_password(password: String) -> Result<String, anyhow::Error> {
+    let salt = SaltString::generate(&mut rand_core::OsRng);
+    let password = Argon2::new(
+        argon2::Algorithm::Argon2id,
+        argon2::Version::V0x13,
+        Params::new(15000, 2, 1, None).unwrap(),
+    )
+    .hash_password(password.as_bytes(), &salt)
+    .unwrap()
+    .to_string();
+
+    Ok(password)
 }

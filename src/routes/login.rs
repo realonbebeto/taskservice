@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 
 use crate::{
     authentication::{Credentials, validate_credentials},
-    error::authentication::{AuthError, LoginError, LoginResponse},
+    error::authentication::{AuthError, LoginError, StdResponse},
 };
 
 use crate::session_state::TypedSession;
@@ -44,8 +44,8 @@ async fn log_in(
                 .insert_profile_id(profile_id)
                 .map_err(|e| LoginError::UnexpectedError(e.into()))?;
 
-            Ok(HttpResponse::Ok().json(LoginResponse {
-                message: "login successful".into(),
+            Ok(HttpResponse::Ok().json(StdResponse {
+                message: "Login Successful",
             }))
         }
         Err(e) => match e {
@@ -65,5 +65,5 @@ async fn log_in_check(flash_msgs: IncomingFlashMessages) -> HttpResponse {
         writeln!(msg, "{}", m.content()).unwrap();
     }
 
-    HttpResponse::Ok().json(LoginResponse { message: msg })
+    HttpResponse::Ok().json(StdResponse { message: &msg })
 }

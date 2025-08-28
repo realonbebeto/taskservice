@@ -73,7 +73,7 @@ pub struct EmailClientSettings {
 }
 
 impl EmailClientSettings {
-    pub fn sender(&self) -> Result<ProfileEmail, String> {
+    pub fn sender(&self) -> Result<ProfileEmail, anyhow::Error> {
         ProfileEmail::parse(self.sender_email.clone())
     }
 

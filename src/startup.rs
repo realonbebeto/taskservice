@@ -2,6 +2,7 @@ use crate::configuration::{DatabaseSettings, Settings};
 use crate::email_client::EmailClient;
 use crate::routes;
 use crate::routes::admin::dashboard::admin_dashboard;
+use crate::routes::admin::password::{change_password, logout};
 use crate::routes::health_check::health_check;
 use crate::routes::login::{log_in, log_in_check};
 use crate::routes::profile::{create_profile, delete_profile, get_profile, update_profile};
@@ -78,6 +79,8 @@ async fn run(
             .service(log_in)
             .service(log_in_check)
             .service(admin_dashboard)
+            .service(change_password)
+            .service(logout)
     })
     .listen(listener)?
     .run();

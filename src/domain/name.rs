@@ -6,7 +6,7 @@ use utoipa::ToSchema;
 pub struct ProfileName(String);
 
 impl ProfileName {
-    pub fn parse(s: String) -> Result<ProfileName, String> {
+    pub fn parse(s: String) -> Result<ProfileName, anyhow::Error> {
         let is_empty_or_whitespace = s.trim().is_empty();
 
         let is_too_long = s.graphemes(true).count() > 256;
@@ -16,7 +16,10 @@ impl ProfileName {
         let contains_forbidden_chars = s.chars().any(|g| forbidden_chars.contains(&g));
 
         if is_empty_or_whitespace || is_too_long || contains_forbidden_chars {
-            Err(format!("{} is not a valid profile name", s))
+            Err(anyhow::anyhow!(format!(
+                "{} is not a valid profile name",
+                s
+            )))
         } else {
             Ok(Self(s))
         }

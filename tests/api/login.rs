@@ -2,9 +2,7 @@ use crate::common;
 
 mod tests {
 
-    use taskservice::error::authentication::LoginResponse;
-
-    use super::common::spawn_app;
+    use super::common::{StdResponse, spawn_app};
 
     #[actix_web::test]
     async fn an_error_flash_message_is_set_on_failure() {
@@ -22,15 +20,15 @@ mod tests {
         // Assert Part 1 - Login is Unauthorized with cookie
         assert_eq!(status, 401);
 
-        let response_body: LoginResponse = response.json().await.unwrap();
+        let response_body: StdResponse = response.json().await.unwrap();
         assert!(response_body.message.contains("Authentication failed"));
 
         // Assert Par 2 - Session cookie is still there
-        let response: LoginResponse = app.get_login().await.json().await.unwrap();
+        let response: StdResponse = app.get_login().await.json().await.unwrap();
         assert!(response.message.contains("Authentication failed"));
 
         // Assert Part 3 - Session cookie has been updated
-        let response: LoginResponse = app.get_login().await.json().await.unwrap();
+        let response: StdResponse = app.get_login().await.json().await.unwrap();
         assert_eq!(response.message, "");
 
         app.drop_test_db().await;
@@ -53,7 +51,7 @@ mod tests {
             .expect("Failed to execute request");
 
         // Confirm if dragonfly a live session
-        let response: LoginResponse = response.json().await.unwrap();
+        let response: StdResponse = response.json().await.unwrap();
         let pattern = format!("Welcome {}", app.test_profile.username.as_ref().to_string());
         assert!(response.message.contains(&pattern));
 
@@ -74,7 +72,7 @@ mod tests {
             .expect("Failed to execute request");
 
         // Confirm if dragonfly a live session
-        let response: LoginResponse = response.json().await.unwrap();
+        let response: StdResponse = response.json().await.unwrap();
         assert!(response.message.contains("Welcome Person of the Internet"));
 
         app.drop_test_db().await;

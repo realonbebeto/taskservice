@@ -17,7 +17,7 @@ pub struct Profile {
 }
 
 impl TryFrom<ProfileCreateRequest> for Profile {
-    type Error = String;
+    type Error = anyhow::Error;
 
     fn try_from(value: ProfileCreateRequest) -> Result<Self, Self::Error> {
         let first_name = ProfileName::parse(value.first_name)?;

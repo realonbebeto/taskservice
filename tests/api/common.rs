@@ -15,6 +15,11 @@ pub struct ConfirmationLinks {
     pub plain_text: reqwest::Url,
 }
 
+#[derive(serde::Deserialize)]
+pub struct StdResponse {
+    pub message: String,
+}
+
 #[allow(unused)]
 pub struct TestApp {
     pub address: String,
@@ -99,6 +104,26 @@ impl TestApp {
             .send()
             .await
             .expect("failed to execute request")
+    }
+
+    pub async fn post_change_password<Body>(&self, body: &Body) -> reqwest::Response
+    where
+        Body: serde::Serialize,
+    {
+        self.api_client
+            .post(format!("{}/admin/password", &self.address))
+            .form(body)
+            .send()
+            .await
+            .expect("Failed to execute request")
+    }
+
+    pub async fn post_logout(&self) -> reqwest::Response {
+        self.api_client
+            .post(format!("{}/admin/logout", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute logout request")
     }
 
     // pub async fn get_profile_id(&self) -> Uuid {

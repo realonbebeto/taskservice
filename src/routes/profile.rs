@@ -100,7 +100,7 @@ pub async fn create_profile(
     let profile: Profile = request
         .into_inner()
         .try_into()
-        .map_err(ProfileError::ValidationError)?;
+        .map_err(|e: anyhow::Error| ProfileError::ValidationError(e.to_string()))?;
 
     // Check if the profile already exists
     let r = pgdb::db_get_profile(&pool, &profile.id).await;

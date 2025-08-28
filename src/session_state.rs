@@ -20,6 +20,10 @@ impl TypedSession {
     pub fn get_profile_id(&self) -> Result<Option<Uuid>, SessionGetError> {
         self.0.get(Self::PROFILE_ID_KEY)
     }
+
+    pub fn log_out(self) {
+        self.0.purge();
+    }
 }
 
 impl FromRequest for TypedSession {

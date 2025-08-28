@@ -7,11 +7,11 @@ use validator::ValidateEmail;
 pub struct ProfileEmail(String);
 
 impl ProfileEmail {
-    pub fn parse(s: String) -> Result<ProfileEmail, String> {
+    pub fn parse(s: String) -> Result<ProfileEmail, anyhow::Error> {
         if s.validate_email() {
             Ok(Self(s))
         } else {
-            Err(format!("{} is not a valid email.", s))
+            Err(anyhow::anyhow!(format!("{} is not a valid email.", s)))
         }
         // TODO: add validation
     }

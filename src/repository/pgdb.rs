@@ -1,8 +1,7 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
-use argon2::password_hash::{SaltString, rand_core};
-use argon2::{Argon2, Params, PasswordHasher};
-use sqlx::{PgPool, Postgres, QueryBuilder, Transaction};
+use anyhow::Context;
+use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
 
 pub async fn db_create_task(
@@ -85,16 +84,6 @@ pub async fn db_create_profile(
     tx: &mut Transaction<'_, Postgres>,
     profile: &Profile,
 ) -> Result<(), sqlx::Error> {
-    let salt = SaltString::generate(&mut rand_core::OsRng);
-    let password = Argon2::new(
-        argon2::Algorithm::Argon2id,
-        argon2::Version::V0x13,
-        Params::new(15000, 2, 1, None).unwrap(),
-    )
-    .hash_password(profile.password.as_ref().as_bytes(), &salt)
-    .unwrap()
-    .to_string();
-
     sqlx::query(
         "INSERT INTO profile(id, first_name, last_name, email, status, username, password) VALUES($1, $2, $3, $4, $5, $6, $7)",
     )
@@ -104,7 +93,7 @@ pub async fn db_create_profile(
     .bind(profile.email.as_ref())
     .bind("pending_confirmation")
     .bind(profile.username.as_ref())
-    .bind(password)
+    .bind(profile.password.phash_as_ref())
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -180,4 +169,15 @@ pub async fn db_update_profile(
             Err(e)
         }
     }
+}
+
+#[tracing::instrument(name = "Get Username", skip(pool))]
+pub async fn get_username(profile_id: Uuid, pool: &PgPool) -> Result<String, anyhow::Error> {
+    let row = sqlx::query("SELECT username FROM profile WHERE id = $1")
+        .bind(profile_id)
+        .fetch_one(pool)
+        .await
+        .context("Failed to perform query to retrieve username")?;
+
+    Ok(row.get("username"))
 }

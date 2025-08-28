@@ -13,8 +13,8 @@ pub enum AuthError {
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct LoginResponse {
-    pub message: String,
+pub struct StdResponse<'a> {
+    pub message: &'a str,
 }
 
 #[derive(thiserror::Error)]
@@ -36,8 +36,8 @@ impl ResponseError for LoginError {
         FlashMessage::error(self.to_string()).send();
         HttpResponse::build(self.status_code())
             // .cookie(Cookie::new("_flash", self.to_string()))
-            .json(LoginResponse {
-                message: self.to_string(),
+            .json(StdResponse {
+                message: &self.to_string(),
             })
     }
 

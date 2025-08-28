@@ -1,6 +1,13 @@
-use crate::error::authentication::AuthError;
+use crate::domain::id::ProfileId;
+use crate::error::authentication::{AuthError, StdResponse};
+use crate::session_state::TypedSession;
 use crate::telemetry::spawn_blocking_with_tracing;
-use actix_web::http::header::HeaderMap;
+use crate::util::e500;
+use actix_web::HttpMessage;
+use actix_web::body::{EitherBody, MessageBody};
+use actix_web::dev::{ServiceRequest, ServiceResponse};
+use actix_web::middleware::Next;
+use actix_web::{FromRequest, HttpResponse, http::header::HeaderMap};
 use anyhow::Context;
 use argon2::password_hash::{SaltString, rand_core};
 use argon2::{Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -143,4 +150,32 @@ pub fn compute_password(password: String) -> Result<String, anyhow::Error> {
     .to_string();
 
     Ok(password)
+}
+
+#[tracing::instrument(name = "Rejecting Anonymous Users", skip(req, next))]
+pub async fn reject_anonymous_users(
+    mut req: ServiceRequest,
+    next: Next<impl MessageBody>,
+) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, actix_web::Error> {
+    let session = {
+        let (http_request, payload) = req.parts_mut();
+        TypedSession::from_request(http_request, payload).await
+    }?;
+
+    match session.get_profile_id().map_err(e500)? {
+        Some(profile_id) => {
+            req.extensions_mut().insert(ProfileId(profile_id));
+            let res = next.call(req).await?;
+            Ok(res.map_body(|_, body| EitherBody::left(body)))
+        }
+        None => {
+            let message = "The user has not logged in";
+            let response = HttpResponse::Unauthorized().json(StdResponse { message });
+
+            tracing::warn!(message);
+
+            let res = req.into_response(response);
+            Ok(res.map_body(|_, body| EitherBody::right(body)))
+        }
+    }
 }

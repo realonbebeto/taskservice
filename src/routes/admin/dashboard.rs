@@ -6,7 +6,7 @@ use crate::error::authentication::StdResponse;
 use crate::repository::pgdb::get_username;
 use crate::util::e500;
 
-#[tracing::instrument(name = "Logging In", skip(session, pool))]
+#[tracing::instrument(name = "Admin Dashboard", skip(session, pool))]
 #[utoipa::path(get, path = "/admin/dashboard", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
 #[get("/admin/dashboard")]
 pub async fn admin_dashboard(

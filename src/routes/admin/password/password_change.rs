@@ -4,6 +4,7 @@ use sqlx::PgPool;
 use utoipa::ToSchema;
 
 use crate::authentication::{Credentials, update_password, validate_credentials};
+use crate::domain::id::ProfileId;
 use crate::domain::password::Password;
 use crate::error::authentication::AuthError;
 use crate::error::authentication::StdResponse;
@@ -20,21 +21,17 @@ pub struct PasswordChange {
     new_password_check: String,
 }
 
-#[tracing::instrument(name = "Change Password", skip(session, form, pool))]
+#[tracing::instrument(name = "Change Password", skip(form, pool))]
 #[utoipa::path(post, path = "/admin/password", responses((status=200, description="Change successful"), (status=303, description="Wrong Entry"), (status=500, description="Something went wrong on our end")))]
 #[post("/admin/password")]
 pub async fn change_password(
     form: web::Form<PasswordChange>,
-    session: TypedSession,
     pool: web::Data<PgPool>,
+    profile_id: web::ReqData<ProfileId>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    let profile_id = session.get_profile_id().map_err(e500)?;
+    let profile_id = profile_id.0;
 
-    if profile_id.is_none() {
-        return Ok(HttpResponse::SeeOther().json(StdResponse {
-            message: "Password Change Not Authorized",
-        }));
-    }
+    let username = get_username(profile_id, &pool).await.map_err(e500)?;
 
     if form.0.new_password != form.0.new_password_check {
         return Ok(HttpResponse::UnprocessableEntity().json(StdResponse {
@@ -47,9 +44,6 @@ pub async fn change_password(
             message: "New password must be different from the current password",
         }));
     }
-
-    let profile_id = profile_id.unwrap();
-    let username = get_username(profile_id, &pool).await.map_err(e500)?;
 
     let credentials = Credentials {
         username,
@@ -84,13 +78,11 @@ pub async fn change_password(
 
 #[tracing::instrument(name = "Logout", skip(session))]
 #[utoipa::path(post, path = "/admin/logout", responses((status=200, description="Logout successful"), (status=303, description="No active session"), (status=500, description="Something went wrong on our end")))]
-#[post("/admin/logout")]
-pub async fn logout(session: TypedSession) -> Result<HttpResponse, actix_web::Error> {
-    if session.get_profile_id().map_err(e500)?.is_none() {
-        return Ok(HttpResponse::SeeOther().json(StdResponse {
-            message: "No active session",
-        }));
-    }
+#[post("/admin//logout")]
+pub async fn logout(
+    profile_id: web::ReqData<ProfileId>,
+    session: TypedSession,
+) -> Result<HttpResponse, actix_web::Error> {
     session.log_out();
     Ok(HttpResponse::Ok().json(StdResponse {
         message: "You have successfully logged out.",

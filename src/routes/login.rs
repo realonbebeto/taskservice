@@ -20,8 +20,8 @@ pub struct LoginData {
 }
 
 #[tracing::instrument(name = "Logging In", skip(form, pool, session))]
-#[utoipa::path(post, path = "/login", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
-#[post("/login")]
+#[utoipa::path(post, path = "login", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
+#[post("login")]
 async fn log_in(
     form: web::Form<LoginData>,
     pool: web::Data<PgPool>,

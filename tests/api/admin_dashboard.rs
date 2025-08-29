@@ -11,6 +11,7 @@ mod tests {
 
         let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
                                                     "password": app.test_profile.password.as_ref()});
+
         app.post_login(&login_body).await;
 
         let response = app
@@ -37,7 +38,11 @@ mod tests {
         // Log out - 2
         let response = app.post_logout().await;
         let response: StdResponse = response.json().await.unwrap();
-        assert!(response.message.contains("No active session"));
+        assert!(
+            response
+                .message
+                .contains("You are not logged in. Please log in...")
+        );
 
         app.drop_test_db().await;
     }

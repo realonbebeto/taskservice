@@ -7,7 +7,10 @@ use actix_web::HttpMessage;
 use actix_web::body::{EitherBody, MessageBody};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
-use actix_web::{FromRequest, HttpResponse, http::header::HeaderMap};
+use actix_web::{
+    FromRequest, HttpResponse, http::header, http::header::HeaderMap, http::header::HeaderValue,
+};
+use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use argon2::password_hash::{SaltString, rand_core};
 use argon2::{Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier};
@@ -152,11 +155,12 @@ pub fn compute_password(password: String) -> Result<String, anyhow::Error> {
     Ok(password)
 }
 
-#[tracing::instrument(name = "Rejecting Anonymous Users", skip(req, next))]
+#[tracing::instrument(name = "Anonymous Check", skip(req, next))]
 pub async fn reject_anonymous_users(
     mut req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, actix_web::Error> {
+    let default_www = HeaderValue::from_static("Basic realm=\"task-service\"");
     let session = {
         let (http_request, payload) = req.parts_mut();
         TypedSession::from_request(http_request, payload).await
@@ -165,14 +169,23 @@ pub async fn reject_anonymous_users(
     match session.get_profile_id().map_err(e500)? {
         Some(profile_id) => {
             req.extensions_mut().insert(ProfileId(profile_id));
-            let res = next.call(req).await?;
+            let mut res = next.call(req).await?;
+
+            // Adding default header
+            let headers = res.headers_mut();
+            headers.insert(header::WWW_AUTHENTICATE, default_www);
+
             Ok(res.map_body(|_, body| EitherBody::left(body)))
         }
         None => {
-            let message = "The user has not logged in";
-            let response = HttpResponse::Unauthorized().json(StdResponse { message });
+            let message = "You are not logged in. Please log in...";
+            let response = HttpResponse::Unauthorized()
+                .append_header((header::WWW_AUTHENTICATE, default_www))
+                .json(StdResponse { message });
 
             tracing::warn!(message);
+
+            FlashMessage::error(message).send();
 
             let res = req.into_response(response);
             Ok(res.map_body(|_, body| EitherBody::right(body)))

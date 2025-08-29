@@ -73,7 +73,11 @@ mod tests {
 
         // Confirm if dragonfly a live session
         let response: StdResponse = response.json().await.unwrap();
-        assert!(response.message.contains("Welcome Person of the Internet"));
+        assert!(
+            response
+                .message
+                .contains("You are not logged in. Please log in...")
+        );
 
         app.drop_test_db().await;
     }

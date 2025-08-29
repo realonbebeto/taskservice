@@ -66,7 +66,10 @@ mod tests {
             .mount(&app.email_server)
             .await;
 
-        // Act
+        // Login
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
+                                                    "password": app.test_profile.password.as_ref()});
+        app.post_login(&login_body).await;
 
         // task payload structure
         let task_request_body =
@@ -93,6 +96,11 @@ mod tests {
             .mount(&app.email_server)
             .await;
 
+        // Login
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
+                                                    "password": app.test_profile.password.as_ref()});
+        app.post_login(&login_body).await;
+
         // task payload structure
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
@@ -110,6 +118,11 @@ mod tests {
         // Arrange
         let mut app = spawn_app().await;
         app.test_profile.store_test_profile(&app.pool).await;
+
+        // Login
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
+                                                    "password": app.test_profile.password.as_ref()});
+        app.post_login(&login_body).await;
 
         let test_cases = vec![
             (
@@ -137,7 +150,7 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn requests_missing_authorization_are_rejected() {
+    async fn requests_missing_authorized_session_are_rejected() {
         // Arrange
         let mut app = spawn_app().await;
 
@@ -145,13 +158,9 @@ mod tests {
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
-        let response = app
-            .api_client
-            .post(format!("{}/task", &app.address))
-            .json(&task_request_body)
-            .send()
-            .await
-            .expect("Failed to execute request");
+        let response = app.post_tasks(task_request_body).await;
+
+        dbg!(&response);
 
         // Assert
         assert_eq!(401, response.status().as_u16());
@@ -173,14 +182,17 @@ mod tests {
         let username = Username().fake::<String>();
         let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
 
-        let response = app
-            .api_client
-            .post(format!("{}/task", &app.address))
-            .basic_auth(username, Some(password))
-            .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))
-            .send()
-            .await
-            .expect("Failed to execute request");
+        // Login
+        let login_body = serde_json::json!({"username": username,
+                                                    "password": password});
+        app.post_login(&login_body).await;
+
+        let task_request_body =
+            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
+
+        let response = app.post_tasks(task_request_body).await;
+
+        dbg!(&response);
 
         //Assert
         assert_eq!(401, response.status().as_u16());
@@ -202,14 +214,17 @@ mod tests {
         let password = Password(std::ops::Range { start: 8, end: 16 }).fake::<String>();
         assert_ne!(app.test_profile.password.as_ref(), password);
 
-        let response = app
-            .api_client
-            .post(&format!("{}/task", &app.address))
-            .basic_auth(app.test_profile.username.as_ref(), Some(password))
-            .json(&serde_json::json!({"task_type": "feature", "source_file": "init.txt"}))
-            .send()
-            .await
-            .expect("Failed to execute request");
+        // Login
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
+                                                    "password": password});
+        app.post_login(&login_body).await;
+
+        let task_request_body =
+            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
+
+        let response = app.post_tasks(task_request_body).await;
+
+        dbg!(&response);
 
         //Assert
         assert_eq!(401, response.status().as_u16());

@@ -18,7 +18,11 @@ mod tests {
         let response = app.post_change_password(&pass_body).await;
 
         let response: StdResponse = response.json().await.unwrap();
-        assert!(response.message.contains("Password Change Not Authorized"));
+        assert!(
+            response
+                .message
+                .contains("You are not logged in. Please log in...")
+        );
 
         app.drop_test_db().await;
     }

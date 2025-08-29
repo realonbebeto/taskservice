@@ -10,7 +10,7 @@ use crate::{
 };
 
 use crate::session_state::TypedSession;
-use actix_web_flash_messages::{IncomingFlashMessages, Level};
+use actix_web_flash_messages::{FlashMessage, IncomingFlashMessages, Level};
 use std::fmt::Write;
 
 #[derive(serde::Deserialize, ToSchema, Debug)]
@@ -20,8 +20,8 @@ pub struct LoginData {
 }
 
 #[tracing::instrument(name = "Logging In", skip(form, pool, session))]
-#[utoipa::path(post, path = "login", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
-#[post("login")]
+#[utoipa::path(post, path = "/login", responses((status=200, description="Authentication successful"), (status=401, description="Authentication failed")))]
+#[post("/login")]
 async fn log_in(
     form: web::Form<LoginData>,
     pool: web::Data<PgPool>,
@@ -43,6 +43,8 @@ async fn log_in(
             session
                 .insert_profile_id(profile_id)
                 .map_err(|e| LoginError::UnexpectedError(e.into()))?;
+
+            FlashMessage::info("Authorized").send();
 
             Ok(HttpResponse::Ok().json(StdResponse {
                 message: "Login Successful",

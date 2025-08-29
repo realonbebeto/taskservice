@@ -71,7 +71,6 @@ async fn run(
             .service(pause_task)
             .service(complete_task)
             .service(start_task)
-            .service(create_task)
             .service(fail_task)
             .service(create_profile)
             .service(delete_profile)
@@ -83,9 +82,10 @@ async fn run(
             .service(
                 web::scope("/admin")
                     .wrap(from_fn(reject_anonymous_users))
-                    .service(admin_dashboard)
-                    .service(change_password)
-                    .service(logout),
+                    .route("/dashboard", web::get().to(admin_dashboard))
+                    .route("/password", web::post().to(change_password))
+                    .route("/logout", web::post().to(logout))
+                    .route("/task", web::post().to(create_task)),
             )
     })
     .listen(listener)?

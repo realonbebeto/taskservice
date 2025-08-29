@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, post, web};
+use actix_web::{HttpResponse, web};
 use serde::Deserialize;
 use sqlx::PgPool;
 use utoipa::ToSchema;
@@ -23,7 +23,6 @@ pub struct PasswordChange {
 
 #[tracing::instrument(name = "Change Password", skip(form, pool))]
 #[utoipa::path(post, path = "/admin/password", responses((status=200, description="Change successful"), (status=303, description="Wrong Entry"), (status=500, description="Something went wrong on our end")))]
-#[post("/admin/password")]
 pub async fn change_password(
     form: web::Form<PasswordChange>,
     pool: web::Data<PgPool>,
@@ -78,11 +77,11 @@ pub async fn change_password(
 
 #[tracing::instrument(name = "Logout", skip(session))]
 #[utoipa::path(post, path = "/admin/logout", responses((status=200, description="Logout successful"), (status=303, description="No active session"), (status=500, description="Something went wrong on our end")))]
-#[post("/admin//logout")]
 pub async fn logout(
     profile_id: web::ReqData<ProfileId>,
     session: TypedSession,
 ) -> Result<HttpResponse, actix_web::Error> {
+    dbg!(1);
     session.log_out();
     Ok(HttpResponse::Ok().json(StdResponse {
         message: "You have successfully logged out.",

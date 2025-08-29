@@ -15,7 +15,7 @@ pub struct ConfirmationLinks {
     pub plain_text: reqwest::Url,
 }
 
-#[derive(serde::Deserialize)]
+#[derive(serde::Deserialize, Debug)]
 pub struct StdResponse {
     pub message: String,
 }
@@ -82,7 +82,7 @@ impl TestApp {
         let password = self.test_profile.password.as_ref();
 
         self.api_client
-            .post(format!("{}/task", &self.address))
+            .post(format!("{}/admin/task", &self.address))
             .basic_auth(username, Some(password))
             .json(&body)
             .send()

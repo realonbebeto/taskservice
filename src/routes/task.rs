@@ -1,14 +1,14 @@
-use crate::authentication::{basic_authentication, validate_credentials};
 use crate::domain::email::ProfileEmail;
 use crate::email_client::EmailClient;
-use crate::error::authentication::AuthError;
+use crate::error::authentication::StdResponse;
 use crate::error::task::TaskError;
 use crate::model::task::Task;
 use crate::model::task::{TaskState, TaskUpdate};
 use crate::repository::pgdb;
-use actix_web::{HttpRequest, HttpResponse};
+use crate::session_state::TypedSession;
+use actix_web::HttpResponse;
 use actix_web::{
-    get, post, put,
+    get, put,
     web::{Data, Json, Path},
 };
 use anyhow::Context;
@@ -103,32 +103,35 @@ async fn get_confirmed_profiles(
 }
 
 #[tracing::instrument(name = "Creating a new task", 
-skip(task_request, pool, email_client, request),
+skip(task_request, pool, email_client, session),
 fields(task_type=%task_request.task_type,
 username=tracing::field::Empty, profile_id=tracing::field::Empty)
 )]
 #[utoipa::path(
     post,
-    path="/task",
+    path="/admin/task",
     request_body=TaskCreateRequest,
     responses((status=201, description="Task created successfuly"))
 )]
-#[post("/task")]
 pub async fn create_task(
     pool: Data<PgPool>,
     task_request: Json<TaskCreateRequest>,
     email_client: Data<EmailClient>,
-    request: HttpRequest,
+    session: TypedSession,
 ) -> Result<HttpResponse, TaskError> {
-    let credentials = basic_authentication(request.headers()).map_err(TaskError::AuthError)?;
-    tracing::Span::current().record("username", tracing::field::display(&credentials.username));
-
-    let profile_id = validate_credentials(credentials, &pool)
-        .await
-        .map_err(|e| match e {
-            AuthError::InvalidCredentials(_) => TaskError::AuthError(e.into()),
-            AuthError::UnexpectedError(_) => TaskError::UnexpectedError(e.into()),
-        })?;
+    dbg!(1);
+    let profile_id = match session.get_profile_id().map_err(|e| {
+        let e = e.to_string();
+        tracing::error!(e);
+        TaskError::UnexpectedError(anyhow::anyhow!("It is us not you, its us"))
+    })? {
+        None => {
+            return Ok(HttpResponse::Unauthorized().json(StdResponse {
+                message: "Not allowed",
+            }));
+        }
+        Some(profile_id) => profile_id,
+    };
 
     tracing::Span::current().record("profile_id", tracing::field::display(&profile_id));
 
@@ -174,7 +177,9 @@ pub async fn create_task(
         }
     }
 
-    Ok(HttpResponse::Ok().body("Task successfully created"))
+    Ok(HttpResponse::Ok().json(StdResponse {
+        message: "Task successfully created",
+    }))
 }
 
 #[utoipa::path(put, path="/task/{task_global_id}",

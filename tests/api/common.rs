@@ -77,7 +77,7 @@ impl TestApp {
         ConfirmationLinks { html, plain_text }
     }
 
-    pub async fn post_tasks(&self, body: serde_json::Value) -> reqwest::Response {
+    pub async fn post_tasks(&self, body: &serde_json::Value) -> reqwest::Response {
         let username = self.test_profile.username.as_ref();
         let password = self.test_profile.password.as_ref();
 

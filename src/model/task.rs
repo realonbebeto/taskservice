@@ -6,8 +6,9 @@ use uuid::Uuid;
 
 use crate::error::task::TaskError;
 
-#[derive(sqlx::Type)] // only for PostgreSQL to match a type definition
-#[derive(Serialize, Deserialize, Display, Debug, Eq, PartialEq, ToSchema)]
+// only for PostgreSQL to match a type definition
+#[derive(Serialize, Deserialize, Display, Debug, Eq, PartialEq, ToSchema, sqlx::Type)]
+#[sqlx(type_name = "task_state", rename_all = "lowercase")]
 pub enum TaskState {
     NotStarted,
     InProgress,

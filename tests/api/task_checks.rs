@@ -11,7 +11,7 @@ mod tests {
     };
 
     use super::common::spawn_app;
-    use crate::common::{ConfirmationLinks, TestApp};
+    use crate::common::{ConfirmationLinks, StdResponse, TestApp};
 
     async fn create_unconfirmed_profile(app: &TestApp) -> ConfirmationLinks {
         let test_profile = &app.test_profile;
@@ -72,10 +72,10 @@ mod tests {
         app.post_login(&login_body).await;
 
         // task payload structure
-        let task_request_body =
-            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
+        let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
 
-        let response = app.post_tasks(task_request_body).await;
+        let response = app.post_tasks(&task_request_body).await;
+        dbg!(&response);
 
         // Assert
         assert_eq!(response.status().as_u16(), 200);
@@ -102,10 +102,11 @@ mod tests {
         app.post_login(&login_body).await;
 
         // task payload structure
-        let task_request_body =
-            serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
+        let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
 
-        let response = app.post_tasks(task_request_body).await;
+        let response = app.post_tasks(&task_request_body).await;
+
+        dbg!(&response);
 
         // Assert
         assert_eq!(response.status().as_u16(), 200);
@@ -136,7 +137,7 @@ mod tests {
         ];
 
         for (invalid_body, error_message) in test_cases {
-            let response = app.post_tasks(invalid_body).await;
+            let response = app.post_tasks(&invalid_body).await;
 
             assert_eq!(
                 400,
@@ -158,7 +159,7 @@ mod tests {
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
-        let response = app.post_tasks(task_request_body).await;
+        let response = app.post_tasks(&task_request_body).await;
 
         dbg!(&response);
 
@@ -190,7 +191,7 @@ mod tests {
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
-        let response = app.post_tasks(task_request_body).await;
+        let response = app.post_tasks(&task_request_body).await;
 
         dbg!(&response);
 
@@ -222,7 +223,7 @@ mod tests {
         let task_request_body =
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
-        let response = app.post_tasks(task_request_body).await;
+        let response = app.post_tasks(&task_request_body).await;
 
         dbg!(&response);
 
@@ -232,6 +233,44 @@ mod tests {
             r#"Basic realm="task-service""#,
             response.headers()["WWW-Authenticate"]
         );
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn task_creation_is_idempotent() {
+        // Arrange
+        let mut app = spawn_app().await;
+        create_confirmed_profile(&app).await;
+
+        // Login
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
+                                                    "password": app.test_profile.password.as_ref()});
+        app.post_login(&login_body).await;
+
+        Mock::given(path("/v3/send"))
+            .and(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .expect(1)
+            .mount(&app.email_server)
+            .await;
+
+        let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
+
+        // First Request
+        let response = app.post_tasks(&task_request_body).await;
+
+        assert_eq!(response.status().as_u16(), 200);
+        let r: StdResponse = response.json().await.unwrap();
+        assert!(r.message.contains("Task successfully created"));
+
+        // Second Request
+        let response = app.post_tasks(&task_request_body).await;
+        dbg!(&response);
+
+        assert_eq!(response.status().as_u16(), 200);
+        let r: StdResponse = response.json().await.unwrap();
+        assert!(r.message.contains("Task successfully created"));
 
         app.drop_test_db().await;
     }

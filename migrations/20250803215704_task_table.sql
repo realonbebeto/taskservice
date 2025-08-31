@@ -8,5 +8,5 @@ CREATE TABLE task (
     "result_file" TEXT,
     "created_at" timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
     "updated_at" timestamptz(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    constraint fk_profile foreign key(profile_id) references profile(id)
+    CONSTRAINT fk_profile FOREIGN KEY(profile_id) REFERENCES profile(id) ON DELETE CASCADE
 )

@@ -14,7 +14,6 @@ pub async fn admin_dashboard(
     pool: web::Data<PgPool>,
     profile_id: web::ReqData<ProfileId>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    dbg!(1);
     let profile_id = profile_id.0;
     let username = get_username(profile_id, &pool).await.map_err(e500)?;
 

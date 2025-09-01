@@ -4,6 +4,7 @@ pub mod domain;
 pub mod email_client;
 pub mod error;
 pub mod idempotency;
+pub mod issue_delivery;
 pub mod model;
 pub mod repository;
 pub mod routes;

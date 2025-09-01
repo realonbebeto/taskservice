@@ -9,6 +9,8 @@ use taskservice::domain::{
 };
 use uuid::Uuid;
 
+use crate::common::TestApp;
+
 pub struct TestProfile {
     pub id: Uuid,
     pub first_name: ProfileName,
@@ -63,5 +65,16 @@ impl TestProfile {
     .execute(pool)
     .await
     .expect("Failed to create test user. ");
+    }
+
+    pub async fn post_login(&self, app: &TestApp) -> reqwest::Response {
+        let login_body = serde_json::json!({"username": self.username.as_ref(),
+                                                    "password": self.password.as_ref()});
+        app.api_client
+            .post(&format!("{}/login", &app.address))
+            .form(&login_body)
+            .send()
+            .await
+            .expect("Failed to execute login request")
     }
 }

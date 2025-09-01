@@ -3,6 +3,8 @@ use std::collections::HashMap;
 use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use taskservice::configuration::{DatabaseSettings, get_configuration};
+use taskservice::email_client::EmailClient;
+use taskservice::issue_delivery::{ExecutionOutcome, try_execute_delivery};
 use taskservice::startup::{Application, get_connection_pool};
 use taskservice::telemetry::{get_tracing_subscriber, init_tracing_subscriber};
 use uuid::Uuid;
@@ -30,6 +32,7 @@ pub struct TestApp {
     pub port: u16,
     pub test_profile: TestProfile,
     pub api_client: reqwest::Client,
+    pub email_client: EmailClient,
 }
 
 impl TestApp {
@@ -126,6 +129,18 @@ impl TestApp {
             .expect("Failed to execute logout request")
     }
 
+    pub async fn dispatch_all_pending_emails(&self) {
+        loop {
+            if let ExecutionOutcome::EmptyQueue =
+                try_execute_delivery(&self.pool, &self.email_client)
+                    .await
+                    .unwrap()
+            {
+                break;
+            }
+        }
+    }
+
     // pub async fn get_profile_id(&self) -> Uuid {
     //     let row = sqlx::query("SELECT id FROM profile WHERE username=$1")
     //         .bind(self.test_profile.username.as_ref())
@@ -207,6 +222,7 @@ pub async fn spawn_app() -> TestApp {
         port,
         test_profile,
         api_client,
+        email_client: configuration.email_client.client(),
     };
 
     test_app

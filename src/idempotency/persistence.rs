@@ -1,6 +1,6 @@
 use super::IdempotencyKey;
 use actix_web::{HttpResponse, body::to_bytes, http::StatusCode};
-use sqlx::PgPool;
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 #[derive(Debug, sqlx::Type)]
@@ -12,9 +12,9 @@ struct HeaderPairRecord {
 
 #[derive(Debug, sqlx::FromRow)]
 struct SavedResponse {
-    response_status_code: i16,
-    response_headers: Vec<HeaderPairRecord>,
-    response_body: Vec<u8>,
+    response_status_code: Option<i16>,
+    response_headers: Option<Vec<HeaderPairRecord>>,
+    response_body: Option<Vec<u8>>,
 }
 
 pub async fn get_saved_response(
@@ -22,7 +22,6 @@ pub async fn get_saved_response(
     idempotency_key: &IdempotencyKey,
     profile_id: Uuid,
 ) -> Result<Option<HttpResponse>, anyhow::Error> {
-    dbg!(1);
     let saved_response = sqlx::query_as::<_, SavedResponse>(
         "SELECT response_status_code, response_headers, response_body 
                                                         FROM idempotency 
@@ -34,22 +33,20 @@ pub async fn get_saved_response(
     .fetch_optional(pool)
     .await?;
 
-    dbg!(2);
-
     if let Some(sr) = saved_response {
-        let status_code = StatusCode::from_u16(sr.response_status_code.try_into()?)?;
+        let status_code = StatusCode::from_u16(sr.response_status_code.unwrap().try_into()?)?;
         let mut response = HttpResponse::build(status_code);
-        for HeaderPairRecord { name, value } in sr.response_headers {
+        for HeaderPairRecord { name, value } in sr.response_headers.unwrap() {
             response.append_header((name, value));
         }
-        Ok(Some(response.body(sr.response_body)))
+        Ok(Some(response.body(sr.response_body.unwrap())))
     } else {
         Ok(None)
     }
 }
 
 pub async fn save_response(
-    pool: &PgPool,
+    mut tx: Transaction<'static, Postgres>,
     idempotency_key: &IdempotencyKey,
     profile_id: Uuid,
     http_res: HttpResponse,
@@ -68,17 +65,56 @@ pub async fn save_response(
     };
 
     sqlx::query(
-        "INSERT INTO idempotency (profile_id, idempotency_key, 
-    response_status_code, response_headers, response_body) VALUES ($1, $2, $3, $4, $5)",
+        "UPDATE idempotency 
+                SET response_status_code = $3, 
+                    response_headers = $4, 
+                    response_body = $5,
+                    updated_at = now()
+                WHERE profile_id =$1 
+                AND idempotency_key = $2",
     )
     .bind(profile_id)
     .bind(idempotency_key.as_ref())
     .bind(status_code)
     .bind(headers)
     .bind(body.as_ref())
-    .execute(pool)
+    .execute(&mut *tx)
     .await?;
+
+    tx.commit().await?;
 
     let http_res = response_head.set_body(body).map_into_boxed_body();
     Ok(http_res)
+}
+
+pub enum NextAction {
+    StartProcessing(Transaction<'static, Postgres>),
+    ReturnSavedResponse(HttpResponse),
+}
+
+pub async fn try_idem_processing(
+    pool: &PgPool,
+    idempotency_key: &IdempotencyKey,
+    profile_id: Uuid,
+) -> Result<NextAction, anyhow::Error> {
+    let mut transaction = pool.begin().await?;
+    let n_inserted_rows = sqlx::query(
+        "INSERT INTO idempotency (profile_id, idempotency_key) 
+    VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(profile_id)
+    .bind(idempotency_key.as_ref())
+    .execute(&mut *transaction)
+    .await?
+    .rows_affected();
+
+    if n_inserted_rows > 0 {
+        Ok(NextAction::StartProcessing(transaction))
+    } else {
+        let saved_response = get_saved_response(pool, idempotency_key, profile_id)
+            .await?
+            .ok_or_else(|| anyhow::anyhow!("We expected a saved response, we did not find it."))?;
+
+        Ok(NextAction::ReturnSavedResponse(saved_response))
+    }
 }

@@ -9,11 +9,11 @@ pub async fn db_create_task(
     task: &Task,
 ) -> Result<(), sqlx::Error> {
     // let mut tx = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO task(profile_id, task_uuid, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6)")
-        .bind(task.profile_id)
-        .bind(task.task_uuid)
+    sqlx::query("INSERT INTO task(reporter_id, id, task_type, state, source_file, result_file) VALUES($1, $2, $3, $4, $5, $6)")
+        .bind(task.reporter_id)
+        .bind(task.id)
         .bind(task.task_type.clone())
-        .bind(task.state.to_string())
+        .bind(&task.state)
         .bind(task.source_file.clone())
         .bind(task.result_file.as_ref())
         .execute(&mut **tx).await?;
@@ -27,7 +27,7 @@ pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<()
     let mut separated = builder.separated(", ");
 
     if let Some(pid) = task_update.profile_id {
-        separated.push("profile_id = ").push_bind(pid);
+        separated.push("reporter_id = ").push_bind(pid);
     }
 
     if let Some(task_type) = task_update.task_type {
@@ -47,7 +47,7 @@ pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<()
     }
 
     builder
-        .push(" WHERE task_uuid = ")
+        .push(" WHERE id = ")
         .push_bind(task_update.task_uuid);
 
     let result = builder.build().execute(&mut *tx).await;
@@ -63,15 +63,14 @@ pub async fn db_update_task(pool: &PgPool, task_update: TaskUpdate) -> Result<()
         }
     }
 }
-
-pub async fn db_get_task(pool: &PgPool, task_id: &str) -> Result<Task, sqlx::Error> {
-    let tokens: Vec<String> = task_id.split("_").map(String::from).collect();
-
-    let mut tx = pool.begin().await.unwrap();
-    let result =
-            sqlx::query_as::<_, Task>("SELECT profile_id, task_uuid, task_type, state, source_file, result_file FROM task WHERE task_uuid= '$1'")
-                .bind(tokens[1].clone())
-                .fetch_one(&mut *tx).await;
+#[tracing::instrument(skip_all)]
+pub async fn db_get_task(pool: &PgPool, task_id: Uuid) -> Result<Task, sqlx::Error> {
+    let result = sqlx::query_as::<_, Task>(
+        "SELECT reporter_id, id, task_type, state, source_file, result_file FROM task WHERE id= $1",
+    )
+    .bind(task_id)
+    .fetch_one(pool)
+    .await;
 
     match result {
         Ok(tsk) => Ok(tsk),
@@ -180,4 +179,20 @@ pub async fn get_username(profile_id: Uuid, pool: &PgPool) -> Result<String, any
         .context("Failed to perform query to retrieve username")?;
 
     Ok(row.get("username"))
+}
+
+#[tracing::instrument(skip_all)]
+pub async fn enqueue_delivery_tasks(
+    tx: &mut Transaction<'_, Postgres>,
+    task: &Task,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "INSERT INTO issue_delivery_queue (task_issue_id, profile_email)
+                SELECT $1, email FROM profile WHERE status = 'confirmed'",
+    )
+    .bind(task.id)
+    .execute(&mut **tx)
+    .await?;
+
+    Ok(())
 }

@@ -50,12 +50,12 @@ pub async fn send_confirmation_email(
             &profile.email,
             "Welcome",
             &format!(
-                "Welcome to our newsletter!<br/>\
+                "Welcome to Taskx!<br/>\
             Click <a href=\"{}\">here</a> to confirm your account.",
                 confirmation_link
             ),
             &format!(
-                "Welcome to our newsletter!\nVisit {} to confirm your account",
+                "Welcome to Taskx!\nVisit {} to confirm your account",
                 confirmation_link,
             ),
         )

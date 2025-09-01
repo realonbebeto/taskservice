@@ -4,6 +4,7 @@ mod tests {
     use fake::Fake;
     use fake::faker::internet::en::{Password, Username};
     use std::collections::HashMap;
+    use std::time::Duration;
     use uuid::Uuid;
     use wiremock::{
         Mock, ResponseTemplate,
@@ -12,17 +13,16 @@ mod tests {
 
     use super::common::spawn_app;
     use crate::common::{ConfirmationLinks, StdResponse, TestApp};
+    use crate::test_profile::TestProfile;
 
-    async fn create_unconfirmed_profile(app: &TestApp) -> ConfirmationLinks {
-        let test_profile = &app.test_profile;
-
+    async fn create_unconfirmed_profile(app: &TestApp, profile: &TestProfile) -> ConfirmationLinks {
         // Act
         let mut body = HashMap::new();
-        body.insert("first_name", test_profile.first_name.as_ref());
-        body.insert("last_name", test_profile.first_name.as_ref());
-        body.insert("email", test_profile.email.as_ref());
-        body.insert("username", test_profile.username.as_ref());
-        body.insert("password", test_profile.password.as_ref());
+        body.insert("first_name", profile.first_name.as_ref());
+        body.insert("last_name", profile.first_name.as_ref());
+        body.insert("email", profile.email.as_ref());
+        body.insert("username", profile.username.as_ref());
+        body.insert("password", profile.password.as_ref());
 
         let _mock_guard = Mock::given(path("/v3/send"))
             .and(method("POST"))
@@ -45,8 +45,8 @@ mod tests {
         app.get_confirmation_links(&email_request)
     }
 
-    async fn create_confirmed_profile(app: &TestApp) {
-        let confirmation_link = create_unconfirmed_profile(app).await;
+    async fn create_confirmed_profile(app: &TestApp, profile: &TestProfile) {
+        let confirmation_link = create_unconfirmed_profile(app, profile).await;
         reqwest::get(confirmation_link.html)
             .await
             .unwrap()
@@ -58,7 +58,7 @@ mod tests {
     async fn tasks_not_delivered_to_unconfirmed_profiles() {
         // Arrange
         let mut app = spawn_app().await;
-        create_unconfirmed_profile(&app).await;
+        create_unconfirmed_profile(&app, &app.test_profile).await;
 
         Mock::given(any())
             .respond_with(ResponseTemplate::new(200))
@@ -75,19 +75,20 @@ mod tests {
         let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
 
         let response = app.post_tasks(&task_request_body).await;
-        dbg!(&response);
 
         // Assert
         assert_eq!(response.status().as_u16(), 200);
+
+        app.dispatch_all_pending_emails().await;
 
         app.drop_test_db().await;
     }
 
     #[actix_web::test]
-    async fn tasks_delivered_to_confirmed_profiles() {
+    async fn tasks_are_delivered_to_confirmed_profiles() {
         // Arrange
         let mut app = spawn_app().await;
-        create_confirmed_profile(&app).await;
+        create_confirmed_profile(&app, &app.test_profile).await;
 
         Mock::given(path("v3/send"))
             .and(method("POST"))
@@ -106,10 +107,10 @@ mod tests {
 
         let response = app.post_tasks(&task_request_body).await;
 
-        dbg!(&response);
-
         // Assert
         assert_eq!(response.status().as_u16(), 200);
+
+        app.dispatch_all_pending_emails().await;
 
         app.drop_test_db().await;
     }
@@ -161,8 +162,6 @@ mod tests {
 
         let response = app.post_tasks(&task_request_body).await;
 
-        dbg!(&response);
-
         // Assert
         assert_eq!(401, response.status().as_u16());
         assert_eq!(
@@ -192,8 +191,6 @@ mod tests {
             serde_json::json!({"task_type": "feature", "source_file": "init.txt"});
 
         let response = app.post_tasks(&task_request_body).await;
-
-        dbg!(&response);
 
         //Assert
         assert_eq!(401, response.status().as_u16());
@@ -225,8 +222,6 @@ mod tests {
 
         let response = app.post_tasks(&task_request_body).await;
 
-        dbg!(&response);
-
         //Assert
         assert_eq!(401, response.status().as_u16());
         assert_eq!(
@@ -241,12 +236,10 @@ mod tests {
     async fn task_creation_is_idempotent() {
         // Arrange
         let mut app = spawn_app().await;
-        create_confirmed_profile(&app).await;
+        create_confirmed_profile(&app, &app.test_profile).await;
 
         // Login
-        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(),
-                                                    "password": app.test_profile.password.as_ref()});
-        app.post_login(&login_body).await;
+        app.test_profile.post_login(&app).await;
 
         Mock::given(path("/v3/send"))
             .and(method("POST"))
@@ -266,11 +259,43 @@ mod tests {
 
         // Second Request
         let response = app.post_tasks(&task_request_body).await;
-        dbg!(&response);
 
         assert_eq!(response.status().as_u16(), 200);
         let r: StdResponse = response.json().await.unwrap();
         assert!(r.message.contains("Task successfully created"));
+
+        app.dispatch_all_pending_emails().await;
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn concurrent_task_submission_is_handled_gracefully() {
+        // Arrange
+        let mut app = spawn_app().await;
+        create_confirmed_profile(&app, &app.test_profile).await;
+
+        // Login
+        app.test_profile.post_login(&app).await;
+
+        Mock::given(path("/v3/send"))
+            .and(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_secs(5)))
+            .expect(1)
+            .mount(&app.email_server)
+            .await;
+
+        let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
+
+        let res1 = app.post_tasks(&task_request_body);
+        let res2 = app.post_tasks(&task_request_body);
+
+        let (res1, res2) = tokio::join!(res1, res2);
+
+        assert_eq!(res1.status(), res2.status());
+        assert_eq!(res1.text().await.unwrap(), res2.text().await.unwrap());
+
+        app.dispatch_all_pending_emails().await;
 
         app.drop_test_db().await;
     }

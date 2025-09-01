@@ -106,19 +106,7 @@ pub struct Application {
 impl Application {
     pub async fn build(configuration: &Settings) -> Result<Self, anyhow::Error> {
         let pool = get_connection_pool(&configuration.database);
-        let sender_email = configuration
-            .email_client
-            .sender()
-            .expect("Invalid sender email address.");
-
-        let timeout = configuration.email_client.timeout();
-        let email_client = EmailClient::new(
-            &configuration.email_client.base_uri,
-            sender_email,
-            &configuration.email_client.private_email_key,
-            &configuration.email_client.public_email_key,
-            timeout,
-        );
+        let email_client = configuration.email_client.client();
 
         // Port is coming from the settings
         let address = format!(

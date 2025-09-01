@@ -14,7 +14,7 @@ mod tests {
         let mut app = spawn_app().await;
 
         let req_uri = format!("{}/profile/confirm", app.address);
-        dbg!(&req_uri);
+
         let response = reqwest::get(&req_uri).await.unwrap();
 
         //Assert

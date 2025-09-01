@@ -81,7 +81,6 @@ pub async fn logout(
     profile_id: web::ReqData<ProfileId>,
     session: TypedSession,
 ) -> Result<HttpResponse, actix_web::Error> {
-    dbg!(1);
     session.log_out();
     Ok(HttpResponse::Ok().json(StdResponse {
         message: "You have successfully logged out.",

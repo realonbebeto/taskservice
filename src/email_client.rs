@@ -34,13 +34,13 @@ pub struct EmailClient {
 
 impl EmailClient {
     pub fn new(
-        base_url: &str,
+        base_uri: &str,
         sender: ProfileEmail,
         private_email_key: &str,
         public_email_key: &str,
         timeout: std::time::Duration,
     ) -> Self {
-        let base_url = Url::parse(base_url).expect("Invalid email base uri");
+        let base_url = Url::parse(base_uri).expect("Invalid email base uri");
         let http_client = Client::builder().timeout(timeout).build().unwrap();
         Self {
             http_client,

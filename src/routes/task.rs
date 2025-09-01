@@ -1,16 +1,11 @@
-use crate::domain::email::ProfileEmail;
 use crate::domain::id::ProfileId;
-use crate::email_client::EmailClient;
 use crate::error::authentication::StdResponse;
 use crate::error::task::TaskError;
-use crate::idempotency::IdempotencyKey;
-use crate::idempotency::get_saved_response;
-use crate::idempotency::save_response;
+use crate::idempotency::{IdempotencyKey, NextAction, save_response, try_idem_processing};
 use crate::model::task::Task;
 use crate::model::task::{TaskState, TaskUpdate};
 use crate::repository::pgdb;
-use crate::util::e500;
-use crate::util::opaque_error::e400;
+use crate::util::{e400, e500};
 use actix_web::{
     HttpResponse, get, put,
     web::{Data, Json, Path, ReqData},
@@ -18,12 +13,13 @@ use actix_web::{
 use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use sqlx::{PgPool, Row};
+use sqlx::PgPool;
 use utoipa::ToSchema;
+use uuid::Uuid;
 
 #[derive(Deserialize, Serialize, ToSchema)]
 pub struct TaskIdentifier {
-    task_global_id: String,
+    task_id: Uuid,
 }
 
 #[derive(Deserialize, ToSchema)]
@@ -40,35 +36,23 @@ pub struct TaskCreateRequest {
 
 async fn state_transition(
     pool: Data<PgPool>,
-    task_global_id: String,
+    task_id: Uuid,
     new_state: TaskState,
     result_file: Option<String>,
 ) -> Result<TaskIdentifier, TaskError> {
-    let task = pgdb::db_get_task(pool.get_ref(), &task_global_id)
+    let task = pgdb::db_get_task(pool.get_ref(), task_id)
         .await
         .context("Failed to fetch associated task for task state transition")?;
 
     task.can_transition_to(&new_state)?;
 
-    let tokens: Vec<String> = task_global_id.split("_").map(String::from).collect();
+    let task_update = TaskUpdate::new(task_id, None, None, Some(new_state), None, result_file);
 
-    let task_update = TaskUpdate::new(
-        tokens[1].clone(),
-        None,
-        None,
-        Some(new_state),
-        None,
-        result_file,
-    );
-
-    let task_identifier = task.get_global_id();
     pgdb::db_update_task(pool.get_ref(), task_update)
         .await
         .context("Failed to update task")?;
 
-    Ok(TaskIdentifier {
-        task_global_id: task_identifier,
-    })
+    Ok(TaskIdentifier { task_id })
 }
 #[utoipa::path(get, path = "/task/{task_global_id}",
 params(("task_gloabal_id"= String, Path, description="Global Id")),
@@ -78,38 +62,15 @@ pub async fn get_task(
     pool: Data<PgPool>,
     task_identifier: Path<TaskIdentifier>,
 ) -> Result<HttpResponse, TaskError> {
-    pgdb::db_get_task(pool.get_ref(), &task_identifier.into_inner().task_global_id)
+    pgdb::db_get_task(pool.get_ref(), task_identifier.into_inner().task_id)
         .await
         .context("Failed to fetch associated task")?;
     // TODO
     Ok(HttpResponse::Ok().body("Successful"))
 }
 
-struct ConfirmedProfile {
-    email: ProfileEmail,
-}
-
-#[tracing::instrument(name = "Get confirmed profiles", skip(pool))]
-async fn get_confirmed_profiles(
-    pool: &PgPool,
-) -> Result<Vec<Result<ConfirmedProfile, anyhow::Error>>, sqlx::Error> {
-    let rows = sqlx::query("SELECT email FROM profile WHERE status= 'confirmed'")
-        .fetch_all(pool)
-        .await?;
-
-    let confirmed_profiles = rows
-        .into_iter()
-        .map(|r| match ProfileEmail::parse(r.get("email")) {
-            Ok(email) => Ok(ConfirmedProfile { email }),
-            Err(e) => Err(anyhow::anyhow!(e)),
-        })
-        .collect();
-
-    Ok(confirmed_profiles)
-}
-
 #[tracing::instrument(name = "Creating a new task", 
-skip(task_request, pool, email_client),
+skip(task_request, pool),
 fields(task_type=%task_request.task_type,
 username=tracing::field::Empty, profile_id=tracing::field::Empty)
 )]
@@ -122,12 +83,9 @@ username=tracing::field::Empty, profile_id=tracing::field::Empty)
 pub async fn create_task(
     pool: Data<PgPool>,
     task_request: Json<TaskCreateRequest>,
-    email_client: Data<EmailClient>,
     profile_id: ReqData<ProfileId>,
 ) -> Result<HttpResponse, actix_web::Error> {
     let profile_id = profile_id.0;
-
-    tracing::Span::current().record("profile_id", tracing::field::display(&profile_id));
 
     let TaskCreateRequest {
         task_type,
@@ -136,66 +94,40 @@ pub async fn create_task(
     } = task_request.0;
     let idempotency_key: IdempotencyKey = idempotency_key.try_into().map_err(e400)?;
 
-    if let Some(sr) = get_saved_response(&pool, &idempotency_key, profile_id)
+    let cookiex = FlashMessage::success("The task has been created and sent out");
+
+    let mut transaction = match try_idem_processing(&pool, &idempotency_key, profile_id)
         .await
         .map_err(e500)?
     {
-        FlashMessage::info("The task has been created").send();
-        return Ok(sr);
-    }
+        NextAction::StartProcessing(tx) => tx,
+        NextAction::ReturnSavedResponse(sr) => {
+            cookiex.send();
+            return Ok(sr);
+        }
+    };
 
     let task = Task::new(profile_id, task_type.clone(), source_file.clone());
 
-    let profiles = get_confirmed_profiles(&pool)
-        .await
-        .context("Failed to fetch confirmed profiles")
-        .map_err(e500)?;
-
-    let mut transaction = pool
-        .begin()
-        .await
-        .context("Failed Failed to acquire a Postgres connection from the pool")
-        .map_err(e500)?;
     pgdb::db_create_task(&mut transaction, &task)
         .await
         .context("Failed to create new task")
         .map_err(e500)?;
 
-    transaction
-        .commit()
+    pgdb::enqueue_delivery_tasks(&mut transaction, &task)
         .await
-        .context("Failed to commit SQL transaction to store new task")
+        .context("Failed to enqueue delivery tasks")
         .map_err(e500)?;
-
-    for profile in profiles {
-        match profile {
-            Ok(profile) => {
-                email_client
-                    .send_email(
-                        &profile.email,
-                        "New Task",
-                        &task.task_type,
-                        &task.source_file,
-                    )
-                    .await
-                    .with_context(|| format!("Failed to send task issue to {}", profile.email))
-                    .map_err(e500)?;
-            }
-            Err(error) => {
-                tracing::warn!(error.cause_chain = ?error, "Skipping a coonfirmed profile. Their stored contact details are invalid");
-            }
-        }
-    }
 
     let response = HttpResponse::Ok().json(StdResponse {
         message: "Task successfully created",
     });
 
-    let response = save_response(&pool, &idempotency_key, profile_id, response)
+    let response = save_response(transaction, &idempotency_key, profile_id, response)
         .await
         .map_err(e500)?;
 
-    FlashMessage::success("The task has been created and sent out").send();
+    cookiex.send();
 
     Ok(response)
 }
@@ -212,7 +144,7 @@ pub async fn start_task(
 ) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
-        task_identifier.into_inner().task_global_id,
+        task_identifier.into_inner().task_id,
         TaskState::InProgress,
         None,
     )
@@ -232,7 +164,7 @@ pub async fn pause_task(
 ) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
-        task_identifier.into_inner().task_global_id,
+        task_identifier.into_inner().task_id,
         TaskState::Paused,
         None,
     )
@@ -252,7 +184,7 @@ pub async fn complete_task(
 ) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
-        task_identifier.into_inner().task_global_id,
+        task_identifier.into_inner().task_id,
         TaskState::Completed,
         Some(complete_request.result_file.clone()),
     )
@@ -271,7 +203,7 @@ pub async fn fail_task(
 ) -> Result<HttpResponse, TaskError> {
     state_transition(
         pool,
-        task_identifier.into_inner().task_global_id,
+        task_identifier.into_inner().task_id,
         TaskState::Failed,
         None,
     )

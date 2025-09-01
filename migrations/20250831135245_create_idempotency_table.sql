@@ -1,4 +1,5 @@
 -- Add migration script here
+BEGIN;
 CREATE TYPE header_pair AS (name TEXT, value BYTEA);
 CREATE TABLE idempotency (
     "profile_id" UUID NOT NULL,
@@ -11,3 +12,4 @@ CREATE TABLE idempotency (
     PRIMARY KEY(profile_id, idempotency_key),
     CONSTRAINT fk_profile_idempotency FOREIGN KEY(profile_id) REFERENCES profile(id) ON DELETE CASCADE
 );
+COMMIT;

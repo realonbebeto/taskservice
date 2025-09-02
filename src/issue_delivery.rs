@@ -4,6 +4,7 @@ use crate::repository::pgdb;
 use crate::{configuration::Settings, startup::get_connection_pool};
 use crate::{domain::email::ProfileEmail, email_client::EmailClient};
 use sqlx::{PgPool, Postgres, Row, Transaction};
+use std::sync::Arc;
 use tracing::{Span, field::display};
 use uuid::Uuid;
 
@@ -87,16 +88,15 @@ pub async fn try_execute_delivery(
         }
     }
 
-    dbg!(6);
-
     delete_task(tx, issue_id, &email).await?;
-
-    dbg!(7);
 
     Ok(ExecutionOutcome::TaskCompleted)
 }
 
-async fn worker_loop(pool: PgPool, email_client: EmailClient) -> Result<(), anyhow::Error> {
+async fn delivery_worker_loop(
+    pool: PgPool,
+    email_client: EmailClient,
+) -> Result<(), anyhow::Error> {
     loop {
         match try_execute_delivery(&pool, &email_client).await {
             Ok(ExecutionOutcome::EmptyQueue) => {
@@ -111,11 +111,11 @@ async fn worker_loop(pool: PgPool, email_client: EmailClient) -> Result<(), anyh
 }
 
 pub async fn run_delivery_worker_until_stopped(
-    configuration: Settings,
+    configuration: Arc<Settings>,
 ) -> Result<(), anyhow::Error> {
     let connection_pool = get_connection_pool(&configuration.database);
 
     let email_client = configuration.email_client.client();
 
-    worker_loop(connection_pool, email_client).await
+    delivery_worker_loop(connection_pool, email_client).await
 }

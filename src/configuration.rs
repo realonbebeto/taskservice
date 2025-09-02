@@ -57,6 +57,8 @@ pub struct ApplicationSettings {
     pub app_uri: String,
     #[envconfig(from = "HMAC_SECRET")]
     pub hmac_secret: String,
+    #[envconfig(from = "IDEMPOTENCY_EXPIRATION")]
+    pub idempotency_expiration: u16,
 }
 
 #[derive(Deserialize, Envconfig)]

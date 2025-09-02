@@ -1,6 +1,8 @@
 use std::fmt::{Debug, Display};
+use std::sync::Arc;
 
 use taskservice::configuration::get_configuration;
+use taskservice::idempotency::run_idem_worker_until_stopped;
 use taskservice::issue_delivery::run_delivery_worker_until_stopped;
 use taskservice::startup::Application;
 use taskservice::telemetry::{get_tracing_subscriber, init_tracing_subscriber};
@@ -26,10 +28,19 @@ async fn main() -> anyhow::Result<()> {
     init_tracing_subscriber(subscriber);
     // Panic if we can't read configuration
     let configuration = get_configuration().expect("Failed to read configuration");
+    let configuration = Arc::new(configuration);
     let application = Application::build(&configuration).await?;
     let application_task = tokio::spawn(application.run_until_stopped());
-    let delivery_worker = tokio::spawn(run_delivery_worker_until_stopped(configuration));
+    let delivery_worker = tokio::spawn(run_delivery_worker_until_stopped(Arc::clone(
+        &configuration,
+    )));
+    let idempotency_worker =
+        tokio::spawn(run_idem_worker_until_stopped(Arc::clone(&configuration)));
 
-    tokio::select! {o = application_task => {report_exit("API", o);}, o = delivery_worker => {report_exit("delivery_worker", o);}};
+    tokio::select! {
+        o = application_task => {report_exit("API", o);},
+        o = delivery_worker => {report_exit("delivery_worker", o);},
+        o = idempotency_worker => {report_exit("idempotency_worker", o);}
+    };
     Ok(())
 }

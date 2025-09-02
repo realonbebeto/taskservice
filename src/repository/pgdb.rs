@@ -1,5 +1,6 @@
 use crate::model::profile::{Profile, ProfileResponse, ProfileUpdate};
 use crate::model::task::{Task, TaskUpdate};
+use crate::model::task_issue::Issue;
 use anyhow::Context;
 use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
 use uuid::Uuid;
@@ -187,12 +188,32 @@ pub async fn enqueue_delivery_tasks(
     task: &Task,
 ) -> Result<(), sqlx::Error> {
     sqlx::query(
-        "INSERT INTO issue_delivery_queue (task_issue_id, profile_email)
-                SELECT $1, email FROM profile WHERE status = 'confirmed'",
+        "INSERT INTO issue_delivery_queue (task_issue_id, profile_email, n_retries, execute_after)
+                SELECT $1, email, 0, 0 FROM profile WHERE status = 'confirmed'",
     )
     .bind(task.id)
     .execute(&mut **tx)
     .await?;
 
     Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+pub async fn get_delivery_issue(
+    pool: &PgPool,
+    email: &str,
+    issue_id: Uuid,
+) -> Result<Option<Issue>, sqlx::Error> {
+    let result = sqlx::query_as::<_, Issue>(
+        "SELECT task_issue_id, profile_email, n_retries, execute_after 
+                                                                FROM issue_delivery_queue
+                                                                WHERE task_issue_id=$1
+                                                                AND profile_email = $2",
+    )
+    .bind(issue_id)
+    .bind(email)
+    .fetch_optional(pool)
+    .await?;
+
+    Ok(result)
 }

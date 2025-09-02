@@ -1,9 +1,10 @@
 use std::time::Duration;
 
+use crate::model::task_issue::Issue;
 use crate::repository::pgdb;
 use crate::{configuration::Settings, startup::get_connection_pool};
 use crate::{domain::email::ProfileEmail, email_client::EmailClient};
-use sqlx::{PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use std::sync::Arc;
 use tracing::{Span, field::display};
 use uuid::Uuid;
@@ -16,10 +17,10 @@ pub enum ExecutionOutcome {
 }
 
 #[tracing::instrument(skip_all)]
-async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Uuid, String)>, anyhow::Error> {
+async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Issue)>, anyhow::Error> {
     let mut tx = pool.begin().await?;
-    let result = sqlx::query(
-        "SELECT task_issue_id, profile_email FROM issue_delivery_queue
+    let result = sqlx::query_as::<_, Issue>(
+        "SELECT task_issue_id, profile_email, n_retries, execute_after FROM issue_delivery_queue
             FOR UPDATE SKIP LOCKED
             LIMIT 1",
     )
@@ -27,7 +28,7 @@ async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Uuid, String)>, any
     .await?;
 
     if let Some(r) = result {
-        Ok(Some((tx, r.get("task_issue_id"), r.get("profile_email"))))
+        Ok(Some((tx, r)))
     } else {
         Ok(None)
     }
@@ -61,15 +62,15 @@ pub async fn try_execute_delivery(
         return Ok(ExecutionOutcome::EmptyQueue);
     }
 
-    let (tx, issue_id, email) = task.unwrap();
+    let (tx, task) = task.unwrap();
 
     Span::current()
-        .record("task_issue_id", display(issue_id))
-        .record("profile_email", display(&email));
+        .record("task_issue_id", display(task.task_issue_id))
+        .record("profile_email", display(&task.profile_email));
 
-    match ProfileEmail::parse(email.clone()) {
+    match ProfileEmail::parse(task.profile_email.clone()) {
         Ok(email) => {
-            let issue = pgdb::db_get_task(pool, issue_id).await?;
+            let issue = pgdb::db_get_task(pool, task.task_issue_id).await?;
 
             if let Err(e) = email_client
                 .send_email(
@@ -80,7 +81,7 @@ pub async fn try_execute_delivery(
                 )
                 .await
             {
-                tracing::error!(error.cause_chain = ?e, error.message=%e, "Failed to deliver issue to a confirmed profile. Skipping");
+                tracing::error!(error.cause_chain = ?e, error.message=%e, "Failed to deliver issue to a confirmed profile. Skipping and retrying");
             }
         }
         Err(e) => {
@@ -88,7 +89,7 @@ pub async fn try_execute_delivery(
         }
     }
 
-    delete_task(tx, issue_id, &email).await?;
+    delete_task(tx, task.task_issue_id, &task.profile_email).await?;
 
     Ok(ExecutionOutcome::TaskCompleted)
 }

@@ -4,6 +4,7 @@ use once_cell::sync::Lazy;
 use sqlx::{Connection, Executor, PgConnection, PgPool};
 use taskservice::configuration::{DatabaseSettings, get_configuration};
 use taskservice::email_client::EmailClient;
+use taskservice::idempotency::try_idem_expiration;
 use taskservice::issue_delivery::{ExecutionOutcome, try_execute_delivery};
 use taskservice::startup::{Application, get_connection_pool};
 use taskservice::telemetry::{get_tracing_subscriber, init_tracing_subscriber};
@@ -33,6 +34,7 @@ pub struct TestApp {
     pub test_profile: TestProfile,
     pub api_client: reqwest::Client,
     pub email_client: EmailClient,
+    pub idempotency_expiration: u16,
 }
 
 impl TestApp {
@@ -141,6 +143,18 @@ impl TestApp {
         }
     }
 
+    pub async fn expire_idempotency_keys(&self) {
+        loop {
+            if try_idem_expiration(&self.pool, self.idempotency_expiration)
+                .await
+                .unwrap()
+                .is_none()
+            {
+                break;
+            }
+        }
+    }
+
     // pub async fn get_profile_id(&self) -> Uuid {
     //     let row = sqlx::query("SELECT id FROM profile WHERE username=$1")
     //         .bind(self.test_profile.username.as_ref())
@@ -223,6 +237,7 @@ pub async fn spawn_app() -> TestApp {
         test_profile,
         api_client,
         email_client: configuration.email_client.client(),
+        idempotency_expiration: configuration.application.idempotency_expiration,
     };
 
     test_app

@@ -122,25 +122,28 @@ pub async fn try_idem_processing(
     }
 }
 
-async fn try_idem_expiration(pool: &PgPool, duration: u16) -> Result<Option<i32>, anyhow::Error> {
+pub async fn try_idem_expiration(
+    pool: &PgPool,
+    duration: u16,
+) -> Result<Option<i64>, anyhow::Error> {
     let n_rows = sqlx::query(
-        "SELECT COUNT(*) as count FROM idempotency WHERE NOW() - updated_at > INTERVAL '$1 seconds'",
+        "SELECT COUNT(*) as count FROM idempotency WHERE NOW() - updated_at >= INTERVAL '$1 seconds'",
     )
     .bind(duration as i16)
     .fetch_one(pool)
     .await?;
 
-    let n_rows: i32 = n_rows.get("count");
+    let n_rows: i64 = n_rows.get("count");
 
     if n_rows > 0 {
-        sqlx::query("DELETE FROM idempotency WHERE NOW() - updated_at > INTERVAL '$1 seconds'")
+        sqlx::query("DELETE FROM idempotency WHERE NOW() - updated_at >= INTERVAL '$1 seconds'")
             .bind(duration as i16)
             .execute(pool)
             .await?;
 
-        return Ok(Some(n_rows));
+        Ok(Some(n_rows))
     } else {
-        return Ok(None);
+        Ok(None)
     }
 }
 

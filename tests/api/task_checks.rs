@@ -14,6 +14,7 @@ mod tests {
     use super::common::spawn_app;
     use crate::common::{ConfirmationLinks, StdResponse, TestApp};
     use crate::test_profile::TestProfile;
+    use sqlx::Row;
 
     async fn create_unconfirmed_profile(app: &TestApp, profile: &TestProfile) -> ConfirmationLinks {
         // Act
@@ -296,6 +297,44 @@ mod tests {
         assert_eq!(res1.text().await.unwrap(), res2.text().await.unwrap());
 
         app.dispatch_all_pending_emails().await;
+
+        app.drop_test_db().await;
+    }
+
+    #[actix_web::test]
+    async fn idempotency_key_expires() {
+        // Arrange
+        let mut app = spawn_app().await;
+        create_confirmed_profile(&app, &app.test_profile).await;
+
+        // Login
+        app.test_profile.post_login(&app).await;
+
+        Mock::given(path("/v3/send"))
+            .and(method("POST"))
+            .respond_with(ResponseTemplate::new(200))
+            .mount(&app.email_server)
+            .await;
+
+        let task_request_body = serde_json::json!({"task_type": "feature", "source_file": "init.txt", "idempotency_key": Uuid::new_v4().to_string()});
+
+        let res = app.post_tasks(&task_request_body).await;
+
+        assert_eq!(res.status().as_u16(), 200);
+        let reqs = app.email_server.received_requests().await.unwrap();
+        assert_eq!(reqs.len(), 1);
+
+        std::thread::sleep(Duration::from_secs(app.idempotency_expiration as u64));
+
+        app.expire_idempotency_keys().await;
+
+        let result: i64 = sqlx::query("SELECT COUNT(*) AS count FROM idempotency")
+            .fetch_one(&app.pool)
+            .await
+            .unwrap()
+            .get("count");
+
+        assert_eq!(result, 0);
 
         app.drop_test_db().await;
     }

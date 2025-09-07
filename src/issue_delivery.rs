@@ -19,8 +19,12 @@ pub enum ExecutionOutcome {
 #[tracing::instrument(skip_all)]
 async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Issue)>, anyhow::Error> {
     let mut tx = pool.begin().await?;
+    // Dynamic execute-after period using exponential backoff on last attept column
     let result = sqlx::query_as::<_, Issue>(
-        "SELECT task_issue_id, profile_email, n_retries, execute_after FROM issue_delivery_queue
+        "SELECT task_issue_id, profile_email, n_retries, execute_after 
+            FROM issue_delivery_queue
+            WHERE last_attempt IS NULL 
+            OR last_attempt + (interval '5 minutes' * power(2, n_retries)) <= now()
             FOR UPDATE SKIP LOCKED
             LIMIT 1",
     )
@@ -35,7 +39,7 @@ async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Issue)>, anyhow::Er
 }
 
 #[tracing::instrument(skip_all)]
-async fn delete_task(mut tx: PgTx, issue_id: Uuid, email: &str) -> Result<(), anyhow::Error> {
+async fn delete_task(tx: &mut PgTx, issue_id: Uuid, email: &str) -> Result<(), anyhow::Error> {
     sqlx::query(
         "DELETE FROM issue_delivery_queue
     WHERE task_issue_id= $1
@@ -43,10 +47,25 @@ async fn delete_task(mut tx: PgTx, issue_id: Uuid, email: &str) -> Result<(), an
     )
     .bind(issue_id)
     .bind(email)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await?;
 
-    tx.commit().await?;
+    Ok(())
+}
+
+#[tracing::instrument(skip_all)]
+async fn update_task(tx: &mut PgTx, issue_id: Uuid, email: &str) -> Result<(), anyhow::Error> {
+    sqlx::query(
+        "UPDATE issue_delivery_queue
+                                SET n_retries = n_retries + 1,
+                                last_attempt = now()
+                                WHERE task_issue_id = $1
+                                AND profile_email = $2",
+    )
+    .bind(issue_id)
+    .bind(email)
+    .execute(&mut **tx)
+    .await?;
 
     Ok(())
 }
@@ -62,7 +81,7 @@ pub async fn try_execute_delivery(
         return Ok(ExecutionOutcome::EmptyQueue);
     }
 
-    let (tx, task) = task.unwrap();
+    let (mut tx, task) = task.unwrap();
 
     Span::current()
         .record("task_issue_id", display(task.task_issue_id))
@@ -82,6 +101,7 @@ pub async fn try_execute_delivery(
                 .await
             {
                 tracing::error!(error.cause_chain = ?e, error.message=%e, "Failed to deliver issue to a confirmed profile. Skipping and retrying");
+                update_task(&mut tx, task.task_issue_id, &task.profile_email).await?;
             }
         }
         Err(e) => {
@@ -89,7 +109,9 @@ pub async fn try_execute_delivery(
         }
     }
 
-    delete_task(tx, task.task_issue_id, &task.profile_email).await?;
+    delete_task(&mut tx, task.task_issue_id, &task.profile_email).await?;
+
+    tx.commit().await?;
 
     Ok(ExecutionOutcome::TaskCompleted)
 }

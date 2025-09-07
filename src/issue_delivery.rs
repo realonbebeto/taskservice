@@ -21,7 +21,7 @@ async fn dequeue_task(pool: &PgPool) -> Result<Option<(PgTx, Issue)>, anyhow::Er
     let mut tx = pool.begin().await?;
     // Dynamic execute-after period using exponential backoff on last attept column
     let result = sqlx::query_as::<_, Issue>(
-        "SELECT task_issue_id, profile_email, n_retries, execute_after 
+        "SELECT task_issue_id, profile_email 
             FROM issue_delivery_queue
             WHERE last_attempt IS NULL 
             OR last_attempt + (interval '5 minutes' * power(2, n_retries)) <= now()

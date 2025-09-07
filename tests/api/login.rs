@@ -81,4 +81,36 @@ mod tests {
 
         app.drop_test_db().await;
     }
+
+    #[actix_web::test]
+    async fn access_token_is_generated() {
+        // Arrange
+        let mut app = spawn_app().await;
+        app.test_profile.store_test_profile(&app.pool).await;
+
+        let login_body = serde_json::json!({"username": app.test_profile.username.as_ref(), "password": app.test_profile.password.as_ref()});
+
+        let response = app.post_login(&login_body).await;
+
+        let token = response
+            .headers()
+            .get("Authorization")
+            .unwrap()
+            .to_str()
+            .unwrap()
+            .strip_prefix("Bearer ")
+            .unwrap();
+
+        let response = app
+            .api_client
+            .get(&format!("{}/login", &app.address))
+            .bearer_auth(token)
+            .send()
+            .await
+            .expect("Failed to execute login request");
+
+        assert_eq!(response.status().as_u16(), 200);
+
+        app.drop_test_db().await;
+    }
 }

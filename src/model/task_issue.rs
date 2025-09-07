@@ -7,6 +7,4 @@ use uuid::Uuid;
 pub struct Issue {
     pub task_issue_id: Uuid,
     pub profile_email: String,
-    pub n_retries: i16,
-    pub execute_after: i16,
 }

@@ -1,4 +1,4 @@
-use actix_web::{HttpResponse, cookie::Cookie, get, post, web};
+use actix_web::{HttpResponse, cookie::Cookie, get, http::header, post, web};
 
 use secrecy::SecretBox;
 use sqlx::PgPool;
@@ -55,7 +55,7 @@ async fn log_in(
             let refresh_token = create_token(profile_id, 30 * 24 * 60, secret)?;
 
             Ok(HttpResponse::Ok()
-                .append_header(("Bearer", access_token.as_str()))
+                .insert_header((header::AUTHORIZATION, format!("Bearer {}", access_token)))
                 .cookie(
                     Cookie::build("refresh_token", refresh_token)
                         .http_only(true)

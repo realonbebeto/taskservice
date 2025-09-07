@@ -204,7 +204,7 @@ pub fn create_token(
     };
 
     let jwt = encode(
-        &Header::new(Algorithm::EdDSA),
+        &Header::new(Algorithm::HS512),
         &claims,
         &EncodingKey::from_secret(secret_key.as_ref()),
     )?;
@@ -221,7 +221,7 @@ pub fn validate_access_token(
     let token_data = decode::<Claims>(
         &access_token,
         &DecodingKey::from_secret(secret_key.as_ref()),
-        &Validation::new(Algorithm::EdDSA),
+        &Validation::new(Algorithm::HS512),
     )?;
     Ok(token_data.claims.sub)
 }

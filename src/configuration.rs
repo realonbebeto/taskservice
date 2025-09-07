@@ -55,10 +55,12 @@ pub struct ApplicationSettings {
     pub app_environment: Environment,
     #[envconfig(from = "APP_URI")]
     pub app_uri: String,
-    #[envconfig(from = "HMAC_SECRET")]
-    pub hmac_secret: String,
+    #[envconfig(from = "SECRET_KEY")]
+    pub secret_key: String,
     #[envconfig(from = "IDEMPOTENCY_EXPIRATION")]
-    pub idempotency_expiration: u16,
+    pub idempotency_expiration: u64,
+    #[envconfig(from = "ACCESS_TOKEN_EXPIRE_MINUTES")]
+    pub access_token_expire_minutes: u64,
 }
 
 #[derive(Deserialize, Envconfig)]

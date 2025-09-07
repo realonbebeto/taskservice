@@ -29,6 +29,12 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(Debug)]
 pub struct ApplicationBaseUri(pub String);
 
+#[derive(Debug)]
+pub struct SecretKey(pub String);
+
+#[derive(Debug)]
+pub struct ExpiryTime(pub u64);
+
 async fn run(
     listener: TcpListener,
     pg_pool: PgPool,
@@ -36,6 +42,7 @@ async fn run(
     base_uri: &str,
     secret: &str,
     redis_uri: &str,
+    expiry_time: u64,
 ) -> Result<Server, anyhow::Error> {
     unsafe {
         // std::env::set_var("RUST_LOG", "trace");
@@ -48,6 +55,8 @@ async fn run(
     let message_store = CookieMessageStore::builder(secret_key.clone()).build();
     let message_framework = FlashMessagesFramework::builder(message_store).build();
     let redis_store = RedisSessionStore::new(redis_uri).await?;
+    let secret = Data::new(SecretKey(secret.to_string()));
+    let expiry = Data::new(ExpiryTime(expiry_time));
 
     let server = HttpServer::new(move || {
         // let pgdb_repo = PGDBRepository::init();
@@ -64,6 +73,8 @@ async fn run(
             .app_data(pg_pool.clone())
             .app_data(email_client.clone())
             .app_data(base_uri.clone())
+            .app_data(secret.clone())
+            .app_data(expiry.clone())
             .route("/", web::get().to(routes::index::index_page))
             .service(SwaggerUi::new("/docs/{_:.*}").url("/api-docs/openapi.json", openapi.clone()))
             .service(health_check)
@@ -120,8 +131,9 @@ impl Application {
             pool,
             email_client,
             &configuration.application.app_uri,
-            &configuration.application.hmac_secret,
+            &configuration.application.secret_key,
             &configuration.redis_uri,
+            configuration.application.access_token_expire_minutes,
         )
         .await?;
 

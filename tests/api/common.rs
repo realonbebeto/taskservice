@@ -34,7 +34,7 @@ pub struct TestApp {
     pub test_profile: TestProfile,
     pub api_client: reqwest::Client,
     pub email_client: EmailClient,
-    pub idempotency_expiration: u16,
+    pub idempotency_expiration: u64,
 }
 
 impl TestApp {

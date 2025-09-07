@@ -1,22 +1,27 @@
 use crate::domain::id::ProfileId;
 use crate::error::authentication::{AuthError, StdResponse};
 use crate::session_state::TypedSession;
+use crate::startup::SecretKey;
 use crate::telemetry::spawn_blocking_with_tracing;
 use crate::util::e500;
-use actix_web::HttpMessage;
-use actix_web::body::{EitherBody, MessageBody};
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
 use actix_web::{
     FromRequest, HttpResponse, http::header, http::header::HeaderMap, http::header::HeaderValue,
 };
+use actix_web::{
+    HttpMessage,
+    body::{EitherBody, MessageBody},
+    web::Data,
+};
 use actix_web_flash_messages::FlashMessage;
 use anyhow::Context;
 use argon2::password_hash::{SaltString, rand_core};
 use argon2::{Argon2, Params, PasswordHash, PasswordHasher, PasswordVerifier};
-use base64::Engine;
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::{PgPool, Row};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use uuid::Uuid;
 
 pub struct Credentials {
@@ -85,40 +90,19 @@ pub async fn validate_credentials(
     profile_id.ok_or_else(|| AuthError::InvalidCredentials(anyhow::anyhow!("Unknown username. ")))
 }
 
-#[tracing::instrument(name = "Validate credentials", skip(headers))]
-pub fn basic_authentication(headers: &HeaderMap) -> Result<Credentials, anyhow::Error> {
+#[tracing::instrument(name = "Read request access token", skip(headers))]
+pub fn read_request_access_token(headers: &HeaderMap) -> Result<String, anyhow::Error> {
     let header_value = headers
         .get("Authorization")
         .context("The `Authorization` header is missing")?
         .to_str()
         .context("The `Authorization` header was not a valid UTF8 string.")?;
 
-    let base64encoded_segment = header_value
+    let access_token = header_value
         .strip_prefix("Basic ")
         .context("The authorization scheme was not `Basic`.")?;
 
-    let decoded_bytes = base64::engine::general_purpose::STANDARD
-        .decode(base64encoded_segment)
-        .context("Failed to base64-decode `Basic` credentials")?;
-
-    let decoded_credentials = String::from_utf8(decoded_bytes)
-        .context("The decoded credential string is not valid UTF8.")?;
-
-    let mut credentials = decoded_credentials.splitn(2, ':');
-    let username = credentials
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("A username must be provided in 'Basic' authorization"))?
-        .to_string();
-
-    let password = credentials
-        .next()
-        .ok_or_else(|| anyhow::anyhow!("A password must be provided in 'Basic' authorization"))?
-        .to_string();
-
-    Ok(Credentials {
-        username,
-        password: SecretBox::new(Box::new(password)),
-    })
+    Ok(access_token.to_string())
 }
 
 #[tracing::instrument(name = "Update Password", skip(password, pool))]
@@ -157,6 +141,7 @@ pub fn compute_password(password: String) -> Result<String, anyhow::Error> {
 
 #[tracing::instrument(name = "Anonymous Check", skip(req, next))]
 pub async fn reject_anonymous_users(
+    secret: Data<SecretKey>,
     mut req: ServiceRequest,
     next: Next<impl MessageBody>,
 ) -> Result<ServiceResponse<EitherBody<impl MessageBody>>, actix_web::Error> {
@@ -166,8 +151,11 @@ pub async fn reject_anonymous_users(
         TypedSession::from_request(http_request, payload).await
     }?;
 
-    match session.get_profile_id().map_err(e500)? {
-        Some(profile_id) => {
+    match (
+        session.get_profile_id().map_err(e500)?,
+        validate_access_token(&req, &secret.into_inner().0),
+    ) {
+        (Some(profile_id), Ok(_)) | (Some(profile_id), Err(_)) | (None, Ok(profile_id)) => {
             req.extensions_mut().insert(ProfileId(profile_id));
             let mut res = next.call(req).await?;
 
@@ -177,7 +165,8 @@ pub async fn reject_anonymous_users(
 
             Ok(res.map_body(|_, body| EitherBody::left(body)))
         }
-        None => {
+
+        (None, Err(_)) => {
             let message = "You are not logged in. Please log in...";
             let response = HttpResponse::Unauthorized()
                 .append_header((header::WWW_AUTHENTICATE, default_www))
@@ -191,4 +180,48 @@ pub async fn reject_anonymous_users(
             Ok(res.map_body(|_, body| EitherBody::right(body)))
         }
     }
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct Claims {
+    sub: Uuid,
+    exp: usize,
+}
+
+pub fn create_token(
+    profile_id: Uuid,
+    expiry: u64,
+    secret_key: &str,
+) -> Result<String, anyhow::Error> {
+    let exp = (SystemTime::now() + Duration::from_secs(expiry * 60))
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as usize;
+
+    let claims = Claims {
+        sub: profile_id,
+        exp,
+    };
+
+    let jwt = encode(
+        &Header::new(Algorithm::EdDSA),
+        &claims,
+        &EncodingKey::from_secret(secret_key.as_ref()),
+    )?;
+
+    Ok(jwt)
+}
+
+pub fn validate_access_token(
+    req: &ServiceRequest,
+    secret_key: &str,
+) -> Result<Uuid, anyhow::Error> {
+    let access_token = read_request_access_token(req.headers())?;
+
+    let token_data = decode::<Claims>(
+        &access_token,
+        &DecodingKey::from_secret(secret_key.as_ref()),
+        &Validation::new(Algorithm::EdDSA),
+    )?;
+    Ok(token_data.claims.sub)
 }

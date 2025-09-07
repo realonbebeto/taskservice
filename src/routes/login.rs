@@ -1,12 +1,13 @@
-use actix_web::{HttpResponse, get, post, web};
+use actix_web::{HttpResponse, cookie::Cookie, get, post, web};
 
 use secrecy::SecretBox;
 use sqlx::PgPool;
 use utoipa::ToSchema;
 
 use crate::{
-    authentication::{Credentials, validate_credentials},
+    authentication::{Credentials, create_token, validate_credentials},
     error::authentication::{AuthError, LoginError, StdResponse},
+    startup::{ExpiryTime, SecretKey},
 };
 
 use crate::session_state::TypedSession;
@@ -25,8 +26,11 @@ pub struct LoginData {
 async fn log_in(
     form: web::Form<LoginData>,
     pool: web::Data<PgPool>,
+    secret: web::Data<SecretKey>,
+    expiry_time: web::Data<ExpiryTime>,
     session: TypedSession,
 ) -> Result<HttpResponse, LoginError> {
+    let secret = &secret.into_inner().0;
     let credentials = Credentials {
         username: form.0.username,
         password: SecretBox::new(Box::new(form.0.password)),
@@ -46,9 +50,20 @@ async fn log_in(
 
             FlashMessage::info("Authorized").send();
 
-            Ok(HttpResponse::Ok().json(StdResponse {
-                message: "Login Successful",
-            }))
+            let access_token = create_token(profile_id, expiry_time.into_inner().0, secret)?;
+
+            let refresh_token = create_token(profile_id, 30 * 24 * 60, secret)?;
+
+            Ok(HttpResponse::Ok()
+                .append_header(("Bearer", access_token.as_str()))
+                .cookie(
+                    Cookie::build("refresh_token", refresh_token)
+                        .http_only(true)
+                        .finish(),
+                )
+                .json(StdResponse {
+                    message: "Login Successful",
+                }))
         }
         Err(e) => match e {
             AuthError::InvalidCredentials(_) => Err(LoginError::AuthError(e.into())),

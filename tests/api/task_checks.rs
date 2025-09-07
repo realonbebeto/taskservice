@@ -324,7 +324,7 @@ mod tests {
         let reqs = app.email_server.received_requests().await.unwrap();
         assert_eq!(reqs.len(), 1);
 
-        std::thread::sleep(Duration::from_secs(app.idempotency_expiration as u64));
+        std::thread::sleep(Duration::from_secs(app.idempotency_expiration));
 
         app.expire_idempotency_keys().await;
 

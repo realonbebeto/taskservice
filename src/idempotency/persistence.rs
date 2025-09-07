@@ -124,7 +124,7 @@ pub async fn try_idem_processing(
 
 pub async fn try_idem_expiration(
     pool: &PgPool,
-    duration: u16,
+    duration: u64,
 ) -> Result<Option<i64>, anyhow::Error> {
     let n_rows = sqlx::query(
         "SELECT COUNT(*) as count FROM idempotency WHERE NOW() - updated_at >= INTERVAL '$1 seconds'",
@@ -161,7 +161,7 @@ pub async fn run_idem_worker_until_stopped(
         {
             Ok(_) => {
                 tokio::time::sleep(Duration::from_secs(
-                    configuration.application.idempotency_expiration as u64,
+                    configuration.application.idempotency_expiration,
                 ))
                 .await;
             }

@@ -5,7 +5,7 @@ use crate::routes;
 use crate::routes::admin::dashboard::admin_dashboard;
 use crate::routes::admin::password::{change_password, logout};
 use crate::routes::health_check::health_check;
-use crate::routes::login::{log_in, log_in_check};
+use crate::routes::login::{log_in, log_in_check, refresh_token};
 use crate::routes::profile::{create_profile, delete_profile, get_profile, update_profile};
 use crate::routes::profile_confirm::confirm_profile;
 use crate::routes::task::{
@@ -96,7 +96,8 @@ async fn run(
                     .route("/dashboard", web::get().to(admin_dashboard))
                     .route("/password", web::post().to(change_password))
                     .route("/logout", web::post().to(logout))
-                    .route("/task", web::post().to(create_task)),
+                    .route("/task", web::post().to(create_task))
+                    .route("/refresh-token", web::get().to(refresh_token)),
             )
     })
     .listen(listener)?

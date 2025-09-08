@@ -5,5 +5,6 @@ mod health_check;
 mod login;
 mod profile_checks;
 mod profile_confirm_checks;
+mod refresh_token;
 mod task_checks;
 mod test_profile;

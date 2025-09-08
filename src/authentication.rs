@@ -4,6 +4,7 @@ use crate::session_state::TypedSession;
 use crate::startup::SecretKey;
 use crate::telemetry::spawn_blocking_with_tracing;
 use crate::util::e500;
+use actix_web::HttpRequest;
 use actix_web::dev::{ServiceRequest, ServiceResponse};
 use actix_web::middleware::Next;
 use actix_web::{
@@ -93,17 +94,22 @@ pub async fn validate_credentials(
 #[tracing::instrument(name = "Read request access token", skip(headers))]
 pub fn read_request_access_token(headers: &HeaderMap) -> Result<String, anyhow::Error> {
     let header_value = headers
-        .get("Authorization")
+        .get("authorization")
         .context("The `Authorization` header is missing")?
         .to_str()
         .context("The `Authorization` header was not a valid UTF8 string.")?;
 
     let access_token = header_value
-        .strip_prefix("Basic ")
-        .context("The authorization scheme was not `Basic`.")?;
+        .strip_prefix("Bearer ")
+        .context("The authorization scheme was not `Bearer`.")?;
 
     Ok(access_token.to_string())
 }
+
+// #[tracing::instrument(name = "Read request access token", skip(req))]
+// pub fn read_request_refresh_token(req: &HttpRequest) -> Result<>{
+//     let c = req.cookie("refresh_token")
+// }
 
 #[tracing::instrument(name = "Update Password", skip(password, pool))]
 pub async fn update_password(
@@ -198,13 +204,15 @@ pub fn create_token(
         .unwrap()
         .as_secs() as usize;
 
+    dbg!(exp);
+
     let claims = Claims {
         sub: profile_id,
         exp,
     };
 
     let jwt = encode(
-        &Header::new(Algorithm::HS512),
+        &Header::new(Algorithm::HS256),
         &claims,
         &EncodingKey::from_secret(secret_key.as_ref()),
     )?;
@@ -217,11 +225,33 @@ pub fn validate_access_token(
     secret_key: &str,
 ) -> Result<Uuid, anyhow::Error> {
     let access_token = read_request_access_token(req.headers())?;
-
     let token_data = decode::<Claims>(
         &access_token,
         &DecodingKey::from_secret(secret_key.as_ref()),
-        &Validation::new(Algorithm::HS512),
+        &Validation::new(Algorithm::HS256),
     )?;
     Ok(token_data.claims.sub)
+}
+
+pub fn validate_refresh_token(req: &HttpRequest, secret_key: &str) -> Result<Uuid, anyhow::Error> {
+    let refresh_token = req.cookie("refresh_token");
+
+    match refresh_token {
+        Some(rt) => {
+            let tmp = rt.to_string();
+            let refresh_token = tmp.strip_prefix("refresh_token=");
+            match refresh_token {
+                Some(rt) => {
+                    let token_data = decode::<Claims>(
+                        rt,
+                        &DecodingKey::from_secret(secret_key.as_ref()),
+                        &Validation::new(Algorithm::HS256),
+                    )?;
+                    Ok(token_data.claims.sub)
+                }
+                None => Err(anyhow::anyhow!("No refresh token found")),
+            }
+        }
+        None => Err(anyhow::anyhow!("No refresh token found")),
+    }
 }

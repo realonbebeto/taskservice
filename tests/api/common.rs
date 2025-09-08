@@ -131,6 +131,14 @@ impl TestApp {
             .expect("Failed to execute logout request")
     }
 
+    pub async fn refresh_token(&self) -> reqwest::Response {
+        self.api_client
+            .get(format!("{}/admin/refresh-token", &self.address))
+            .send()
+            .await
+            .expect("Failed to execute refresh token")
+    }
+
     pub async fn dispatch_all_pending_emails(&self) {
         loop {
             if let ExecutionOutcome::EmptyQueue =
